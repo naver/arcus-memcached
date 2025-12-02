@@ -404,6 +404,35 @@ static void settings_init(void)
     settings.extensions.logger = get_stderr_logger();
 }
 
+static void settings_free(void) {
+    if (settings.inter) {
+        free(settings.inter);
+    }
+    if (settings.socketpath) {
+        free(settings.socketpath);
+    }
+    if (settings.inter) {
+        free(settings.inter);
+    }
+    if (settings.username) {
+        free(settings.username);
+    }
+    if (settings.pid_file) {
+        free(settings.pid_file);
+    }
+    if (settings.engine_path) {
+        free(settings.engine_path);
+    }
+    if (settings.engine_config) {
+        free(settings.engine_config);
+    }
+#ifdef ENABLE_ZK_INTEGRATION
+    if (arcus_zk_cfg != NULL) {
+        free(arcus_zk_cfg);
+    }
+#endif
+}
+
 /*
  * Adds a message header to a connection.
  *
@@ -16027,6 +16056,130 @@ static void close_listen_sockets(void)
     }
 }
 
+#define EXTENSION_PATH_MAX_SIZE 5
+#ifdef ENABLE_ZK_INTEGRATION
+typedef struct {
+    int arcus_zk_to;
+#ifdef PROXY_SUPPORT
+    char *arcus_proxy_cfg;
+#endif
+} zk_args;
+#endif
+
+static int try_load_config_file(const char *path, void *args)
+{
+#ifdef ENABLE_ZK_INTEGRATION
+    zk_args *zk = (zk_args *)args;
+#else
+    (void)args;
+#endif
+    char *access_mask_str = NULL;
+    char *protocol_str = NULL;
+    char *extension_path[EXTENSION_PATH_MAX_SIZE] = {NULL, };
+
+    struct config_item main_config_items[] = {
+        { .key = "port",             .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.port },
+        { .key = "udpport",          .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.udpport },
+        { .key = "socketpath",       .datatype = DT_STRING, .value.dt_string = &settings.socketpath },
+        { .key = "access",           .datatype = DT_STRING, .value.dt_string = &access_mask_str },
+        { .key = "listen",           .datatype = DT_STRING, .value.dt_string = &settings.inter },
+        { .key = "daemonize",        .datatype = DT_BOOL,   .value.dt_bool   = &settings.daemonize },
+        { .key = "maxcore",          .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.maxcore },
+        { .key = "username",         .datatype = DT_STRING, .value.dt_string = &settings.username },
+        { .key = "maxconns",         .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.maxconns },
+        { .key = "lock_memory",      .datatype = DT_BOOL,   .value.dt_bool   = &settings.lock_memory },
+        { .key = "verbosity",        .datatype = DT_SIZE,   .value.dt_size   = (size_t*)&settings.verbose },
+        { .key = "pid_file",         .datatype = DT_STRING, .value.dt_string = &settings.pid_file },
+        { .key = "threads",          .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.num_threads },
+        { .key = "reqs_per_event",   .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.reqs_per_event },
+        { .key = "backlog",          .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.backlog },
+        { .key = "protocol",         .datatype = DT_STRING, .value.dt_string = &protocol_str },
+        { .key = "engine_config",    .datatype = DT_STRING, .value.dt_string = &settings.engine_config },
+        { .key = "engine_path",      .datatype = DT_STRING, .value.dt_string = &settings.engine_path },
+        { .key = "memory_limit",     .datatype = DT_SIZE,   .value.dt_size   = &settings.maxbytes },
+        { .key = "eviction",         .datatype = DT_BOOL,   .value.dt_bool   = (bool*)&settings.evict_to_free },
+        { .key = "sticky_limit",     .datatype = DT_SIZE,   .value.dt_size   = &settings.sticky_limit },
+        { .key = "factor",           .datatype = DT_FLOAT,  .value.dt_float  = (float*)&settings.factor },
+        { .key = "chunk_size",       .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&settings.chunk_size },
+        { .key = "prefix_delimiter", .datatype = DT_CHAR,   .value.dt_char   = &settings.prefix_delimiter },
+        { .key = "allow_detailed",   .datatype = DT_BOOL,   .value.dt_bool   = &settings.allow_detailed },
+        { .key = "detail_enabled",   .datatype = DT_BOOL,   .value.dt_bool   = (bool*)&settings.detail_enabled },
+        { .key = "use_cas",          .datatype = DT_BOOL,   .value.dt_bool   = &settings.use_cas },
+        { .key = "item_size_max",    .datatype = DT_SIZE,   .value.dt_size   = &settings.item_size_max },
+        { .key = "preallocate",      .datatype = DT_BOOL,   .value.dt_bool   = &settings.preallocate },
+        { .key = "extension1",       .datatype = DT_STRING, .value.dt_string = &extension_path[0] },
+        { .key = "extension2",       .datatype = DT_STRING, .value.dt_string = &extension_path[1] },
+        { .key = "extension3",       .datatype = DT_STRING, .value.dt_string = &extension_path[2] },
+        { .key = "extension4",       .datatype = DT_STRING, .value.dt_string = &extension_path[3] },
+        { .key = "extension5",       .datatype = DT_STRING, .value.dt_string = &extension_path[4] },
+#ifdef ENABLE_ZK_INTEGRATION
+        { .key = "zookeeper",       .datatype = DT_STRING, .value.dt_string = (char**)&arcus_zk_cfg },
+        { .key = "zk_timeout",      .datatype = DT_UINT32, .value.dt_uint32 = (uint32_t*)&zk->arcus_zk_to },
+#ifdef PROXY_SUPPORT
+        { .key = "proxy_config",    .datatype = DT_STRING, .value.dt_string = &zk->arcus_proxy_cfg },
+#endif
+#endif
+#ifdef SASL_ENABLED
+        { .key = "require_sasl",    .datatype = DT_BOOL,   .value.dt_bool   = &settings.require_sasl },
+#endif
+        { .key = NULL }
+    };
+
+    if (read_config_file(path, main_config_items, stderr) == -1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error parsing config file. Aborting.\n");
+        return -1;
+    }
+
+    if (settings.verbose > 0) {
+        perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
+    }
+
+    if (access_mask_str != NULL) {
+        settings.access = strtol(access_mask_str, NULL, 8);
+        free(access_mask_str);
+    }
+
+    if (protocol_str != NULL) {
+        if (strcmp(protocol_str, "auto") == 0) {
+            settings.binding_protocol = negotiating_prot;
+        } else if (strcmp(protocol_str, "binary") == 0) {
+            settings.binding_protocol = binary_prot;
+        } else if (strcmp(protocol_str, "ascii") == 0) {
+            settings.binding_protocol = ascii_prot;
+        } else {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "Invalid value for binding protocol in config file: %s\n", protocol_str);
+            free(protocol_str);
+            return -1;
+        }
+        free(protocol_str);
+    }
+
+    if (settings.sticky_limit > 0) {
+        settings.sticky_limit = settings.sticky_limit * 1024 * 1024;
+    }
+
+    for (int i = 0; i < EXTENSION_PATH_MAX_SIZE; i++) {
+        if (extension_path[i] != NULL) {
+            char *ptr = strchr(extension_path[i], ',');
+            if (ptr != NULL) {
+                *ptr = '\0';
+                ptr++;
+            }
+            if (!load_extension(extension_path[i], ptr)) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Failed to load extension: %s\n", extension_path[i]);
+                for (int j = i; j < EXTENSION_PATH_MAX_SIZE; j++)
+                    if (extension_path[j]) free(extension_path[j]);
+                return -1;
+            }
+            free(extension_path[i]);
+        }
+    }
+
+    return 0;
+}
+
 int main (int argc, char **argv)
 {
     int c;
@@ -16042,6 +16195,12 @@ int main (int argc, char **argv)
 
     char old_options[1024] = { [0] = '\0' };
     char *old_opts = old_options;
+
+#ifdef ENABLE_ZK_INTEGRATION
+    zk_args zk;
+#else
+    void *zk = NULL;
+#endif
 
 #ifdef ENABLE_ZK_INTEGRATION
     int  arcus_zk_to=0;
@@ -16063,6 +16222,25 @@ int main (int argc, char **argv)
     if (memcached_initialize_stderr_logger(get_server_api) != EXTENSION_SUCCESS) {
         fprintf(stderr, "Failed to initialize log system\n");
         return EX_OSERR;
+    }
+
+    /* parse config file */
+    if (argc > 1 && argv[1][0] != '-') {
+        const char *config_file = argv[1];
+        if (try_load_config_file(config_file, (void *)&zk) != 0) {
+            exit(EXIT_FAILURE);
+        }
+#ifdef ENABLE_ZK_INTEGRATION
+        if (zk.arcus_zk_to != 0) {
+            arcus_zk_to = zk.arcus_zk_to;
+        }
+#ifdef PROXY_SUPPORT
+        if (zk.arcus_proxy_cfg != NULL) {
+            arcus_proxy_cfg = zk.arcus_proxy_cfg;
+        }
+#endif
+#endif
+        optind++;
     }
 
     /* process arguments */
@@ -16164,6 +16342,7 @@ int main (int argc, char **argv)
             perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
             break;
         case 'l':
+            if (settings.inter) free(settings.inter);
             settings.inter = strdup(optarg);
             break;
         case 'd':
@@ -16181,18 +16360,16 @@ int main (int argc, char **argv)
             }
             break;
         case 'u':
-            settings.username = optarg;
+            if (settings.username != NULL) {
+                free(settings.username);
+            }
+            settings.username = strdup(optarg);
             break;
         case 'P':
             settings.pid_file = optarg;
             break;
         case 'f':
             settings.factor = atof(optarg);
-            if (settings.factor <= 1.0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Factor must be greater than 1\n");
-                return 1;
-            }
            break;
         case 'n':
             settings.chunk_size = atoi(optarg);
@@ -16264,26 +16441,6 @@ int main (int argc, char **argv)
             } else {
                 settings.item_size_max = atoi(optarg);
             }
-            /* small memory allocator needs the maximum item size larger than 20 KB */
-            //if (settings.item_size_max < 1024) {
-            if (settings.item_size_max < 1024 * 20) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Item max size cannot be less than 20KB.\n");
-                return 1;
-            }
-            if (settings.item_size_max > 1024 * 1024 * 128) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Cannot set item size limit higher than 128 mb.\n");
-                return 1;
-            }
-            if (settings.item_size_max > 1024 * 1024) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "WARNING: Setting item max size above 1MB is not"
-                    " recommended!\n"
-                    " Raising this limit increases the minimum memory requirements\n"
-                    " and will decrease your memory efficiency.\n"
-                );
-            }
             break;
         case 'E':
             settings.engine_path = optarg;
@@ -16329,6 +16486,7 @@ int main (int argc, char **argv)
             break;
 #ifdef PROXY_SUPPORT
         case 'x': /* configure for proxy server */
+            if (arcus_proxy_cfg) free(arcus_proxy_cfg);
             arcus_proxy_cfg = strdup(optarg);
             break;
 #endif
@@ -16340,6 +16498,33 @@ int main (int argc, char **argv)
             return 1;
         }
     }
+
+    /* small memory allocator needs the maximum item size larger than 20 KB */
+    //if (settings.item_size_max < 1024) {
+    if (settings.item_size_max < 1024 * 20) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Item max size cannot be less than 20KB.\n");
+        return 1;
+    }
+    if (settings.item_size_max > 1024 * 1024 * 128) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Cannot set item size limit higher than 128 mb.\n");
+        return 1;
+    }
+    if (settings.item_size_max > 1024 * 1024) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "WARNING: Setting item max size above 1MB is not"
+            " recommended!\n"
+            " Raising this limit increases the minimum memory requirements\n"
+            " and will decrease your memory efficiency.\n"
+        );
+    }
+    if (settings.factor <= 1.0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Factor must be greater than 1\n");
+        return 1;
+    }
+
     old_opts += sprintf(old_opts, "num_threads=%lu;", (unsigned long)settings.num_threads);
     old_opts += sprintf(old_opts, "cache_size=%llu;", (unsigned long long)settings.maxbytes);
     if (settings.evict_to_free == 0) {
@@ -16846,9 +17031,7 @@ int main (int argc, char **argv)
 #endif
 
     /* Clean up strdup() call for bind() address */
-    if (settings.inter) {
-        free(settings.inter);
-    }
+    settings_free();
 
     event_base_free(main_base);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
