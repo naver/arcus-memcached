@@ -79,6 +79,7 @@ struct config_item {
  */
 MEMCACHED_PUBLIC_API int parse_config(const char *str, struct config_item items[], FILE *error);
 
+int read_config_file(const char *fname, struct config_item items[], FILE *error);
 #ifdef __cplusplus
 }
 #endif

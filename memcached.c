@@ -16064,11 +16064,19 @@ static int settings_check(void)
             "The value of memory limit must be greater than 0.\n");
         return -1;
     }
+    if (settings.maxbytes % (1024 * 1024) != 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "WARNING: The value of memory limit is recommended to be in MB!\n");
+    }
 #ifdef ENABLE_STICKY_ITEM
     if (settings.maxbytes < settings.sticky_limit) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
             "The value of memory limit cannot be smaller than sticky_limit.\n");
         return -1;
+    }
+    if (settings.sticky_limit % (1024 * 1024) != 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "WARNING: The value of sticky_limit is recommended to be in MB!\n");
     }
 #endif
     if (settings.reqs_per_event <= 0) {
@@ -16140,6 +16148,79 @@ static void close_listen_sockets(void)
     }
 }
 
+#define FREE_ONCE(p) do { static bool _f=0; if (!_f&&p) free(p); _f=1; } while(0)
+
+static int load_config_file(const char *path)
+{
+    char *access_mask_str = NULL;
+    const int CFG_PORT_IDX = 0;
+    const int CFG_UDPPORT_IDX = 1;
+    struct config_item config_items[] = {
+        { .key = "port",             .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.port },
+        { .key = "udpport",          .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.udpport },
+        { .key = "factor",           .datatype = DT_FLOAT,    .value.dt_float    = &settings.factor },
+        { .key = "socketpath",       .datatype = DT_STRING,   .value.dt_string   = &settings.socketpath },
+        { .key = "access",           .datatype = DT_STRING,   .value.dt_string   = &access_mask_str },
+        { .key = "listen",           .datatype = DT_STRING,   .value.dt_string   = &settings.inter },
+        { .key = "daemonize",        .datatype = DT_BOOL,     .value.dt_bool     = &settings.daemonize },
+        { .key = "maxcore",          .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.maxcore },
+        { .key = "username",         .datatype = DT_STRING,   .value.dt_string   = &settings.username },
+        { .key = "maxconns",         .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.maxconns },
+        { .key = "lock_memory",      .datatype = DT_BOOL,     .value.dt_bool     = &settings.lock_memory },
+        { .key = "memory_limit",     .datatype = DT_SIZE,     .value.dt_size     = &settings.maxbytes },
+#ifdef ENABLE_STICKY_ITEM
+        { .key = "sticky_limit",     .datatype = DT_SIZE,     .value.dt_size     = &settings.sticky_limit },
+#endif
+        { .key = "verbosity",        .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.verbose },
+        { .key = "pid_file",         .datatype = DT_STRING,   .value.dt_string   = &settings.pid_file },
+        { .key = "threads",          .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.num_threads },
+        { .key = "reqs_per_event",   .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.reqs_per_event },
+        { .key = "backlog",          .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.backlog },
+        { .key = "protocol",         .datatype = DT_CALLBACK, .value.dt_callback = (bool(*)(char*))parse_binding_protocol },
+        { .key = "engine_config",    .datatype = DT_STRING,   .value.dt_string   = &settings.engine_config },
+        { .key = "engine_path",      .datatype = DT_STRING,   .value.dt_string   = &settings.engine_path },
+        { .key = "eviction",         .datatype = DT_BOOL,     .value.dt_bool     = &settings.evict_to_free },
+        { .key = "chunk_size",       .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&settings.chunk_size },
+        { .key = "prefix_delimiter", .datatype = DT_CHAR,     .value.dt_char     = &settings.prefix_delimiter },
+        { .key = "allow_detailed",   .datatype = DT_BOOL,     .value.dt_bool     = &settings.allow_detailed },
+        { .key = "detail_enabled",   .datatype = DT_BOOL,     .value.dt_bool     = &settings.detail_enabled },
+        { .key = "use_cas",          .datatype = DT_BOOL,     .value.dt_bool     = &settings.use_cas },
+        { .key = "item_size_max",    .datatype = DT_SIZE,     .value.dt_size     = &settings.item_size_max },
+        { .key = "preallocate",      .datatype = DT_BOOL,     .value.dt_bool     = &settings.preallocate },
+        { .key = "extension",        .datatype = DT_CALLBACK, .value.dt_callback = load_extension },
+#ifdef ENABLE_ZK_INTEGRATION
+        { .key = "zookeeper",        .datatype = DT_STRING,   .value.dt_string   = &arcus_zk_cfg },
+        { .key = "zk_timeout",       .datatype = DT_UINT32,   .value.dt_uint32   = (uint32_t*)&arcus_zk_to },
+#ifdef PROXY_SUPPORT
+        { .key = "proxy_config",     .datatype = DT_STRING,   .value.dt_string   = &arcus_proxy_cfg },
+#endif
+#endif
+#ifdef SASL_ENABLED
+        { .key = "require_sasl",     .datatype = DT_BOOL,     .value.dt_bool     = &settings.require_sasl },
+#endif
+        { .key = NULL }
+    };
+
+    if (read_config_file(path, config_items, stderr) == -1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error parsing config file. Aborting.\n");
+        return -1;
+    }
+
+    if (access_mask_str != NULL) {
+        settings.access = strtol(access_mask_str, NULL, 8);
+        free(access_mask_str);
+    }
+
+    tcp_specified = config_items[CFG_PORT_IDX].found;
+    udp_specified = config_items[CFG_UDPPORT_IDX].found;
+
+    if (settings.verbose > 0) {
+        perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
+    }
+
+    return 0;
+}
+
 int main (int argc, char **argv)
 {
     int c;
@@ -16166,6 +16247,14 @@ int main (int argc, char **argv)
     if (memcached_initialize_stderr_logger(get_server_api) != EXTENSION_SUCCESS) {
         fprintf(stderr, "Failed to initialize log system\n");
         return EX_OSERR;
+    }
+
+    /* parse config file */
+    if (argc > 1 && argv[1][0] != '-') {
+        if (load_config_file(argv[1]) != 0) {
+            exit(EXIT_FAILURE);
+        }
+        optind++;
     }
 
     /* process arguments */
@@ -16225,6 +16314,7 @@ int main (int argc, char **argv)
             tcp_specified = true;
             break;
         case 's':
+            FREE_ONCE(settings.socketpath);
             settings.socketpath = optarg;
             break;
         case 'm':
@@ -16265,6 +16355,7 @@ int main (int argc, char **argv)
             perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
             break;
         case 'l':
+            if (settings.inter) free(settings.inter);
             settings.inter = strdup(optarg);
             break;
         case 'd':
@@ -16277,9 +16368,11 @@ int main (int argc, char **argv)
             settings.reqs_per_event = atoi(optarg);
             break;
         case 'u':
+            FREE_ONCE(settings.username);
             settings.username = optarg;
             break;
         case 'P':
+            FREE_ONCE(settings.pid_file);
             settings.pid_file = optarg;
             break;
         case 'f':
@@ -16309,7 +16402,7 @@ int main (int argc, char **argv)
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Invalid value for binding protocol: %s\n"
                         " -- should be one of auto, binary, or ascii\n", optarg);
-                exit(EX_USAGE);
+                exit(EXIT_FAILURE);
             }
             break;
         case 'I':
@@ -16328,9 +16421,11 @@ int main (int argc, char **argv)
             }
             break;
         case 'E':
+            FREE_ONCE(settings.engine_path);
             settings.engine_path = optarg;
             break;
         case 'e':
+            FREE_ONCE(settings.engine_config);
             settings.engine_config = optarg;
             break;
         case 'q':
@@ -16354,6 +16449,7 @@ int main (int argc, char **argv)
         case 'z': /* configure for Arcus zookeeper cluster */
                   /* host_list in the form of
                      -z 10.0.0.1:2181,10.0.0.2:2181,10.0.0.3:2181 */
+            FREE_ONCE(arcus_zk_cfg);
             arcus_zk_cfg = optarg;
             break;
         case 'o': /* Arcus Zookeeper session timeout */
@@ -16361,6 +16457,7 @@ int main (int argc, char **argv)
             break;
 #ifdef PROXY_SUPPORT
         case 'x': /* configure for proxy server */
+            if (arcus_proxy_cfg) free(arcus_proxy_cfg);
             arcus_proxy_cfg = strdup(optarg);
             break;
 #endif

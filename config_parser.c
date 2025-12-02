@@ -26,9 +26,6 @@
 #include <memcached/config_parser.h>
 #include <memcached/util.h>
 
-static int read_config_file(const char *fname, struct config_item items[],
-                            FILE *error);
-
 /**
  * Copy a string and trim of leading and trailing white space characters.
  * Allow the user to escape out the stop character by putting a backslash before
@@ -229,8 +226,7 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
    return ret;
 }
 
-static int read_config_file(const char *fname, struct config_item items[],
-                            FILE *error) {
+int read_config_file(const char *fname, struct config_item items[], FILE *error) {
    FILE *fp = fopen(fname, "r");
    if (fp == NULL) {
       (void)fprintf(error, "Failed to open file: %s\n", fname);
