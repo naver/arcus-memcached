@@ -13911,7 +13911,6 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true, false);
     }
-#if 0
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
     {
         process_get_command(c, tokens, ntokens, false, true);
@@ -13920,7 +13919,6 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true, true);
     }
-#endif
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
         process_mget_command(c, tokens, ntokens, false);
@@ -14110,7 +14108,8 @@ static int try_read_command_ascii(conn *c)
              *  - prefixlist max length : max prefix count(100) * MAX_PREFIX_LENGTH(250) : 25KB
              */
             if ((c->rbytes > (26*1024)) &&
-                (strncmp(ptr, "get ", 4) != 0 && strncmp(ptr, "gets ", 5) != 0)) {
+                (strncmp(ptr, "get ", 4) != 0 && strncmp(ptr, "gets ", 5) != 0 &&
+                 strncmp(ptr, "gat ", 4) != 0 && strncmp(ptr, "gats ", 5) != 0)) {
                 char buffer[32];
                 memcpy(buffer, ptr, 31); buffer[31] = '\0';
                 mc_logger->log(EXTENSION_LOG_WARNING, c,

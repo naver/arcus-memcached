@@ -97,3 +97,4 @@
 ./t/keyscan.t
 ./t/prefixscan.t
 ./t/touch.t
+./t/gat.t
