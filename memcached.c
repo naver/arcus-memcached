@@ -8814,13 +8814,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int64_t exptime = 0;
 
-#ifdef SASL_ENABLED
-    if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key_token->value, tokens, ntokens)) {
-        out_string(c, "CLIENT_ERROR unauthorized");
-        return;
-    }
-#endif
-
     if (should_touch) {
         // For get and touch commands, use first token as exptime
         if (!safe_strtoll(tokens[1].value, &exptime)) {
@@ -8829,6 +8822,21 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
         }
         key_token++;
     }
+
+#ifdef SASL_ENABLED
+    uint16_t need_perm = AUTHZ_KV;
+    if (should_touch) need_perm |= AUTHZ_ATTR;
+
+    // get with `arcus:` prefix without authentication are allowed for a single key only.
+    bool need_prefix_check = (ntokens == 3 || (should_touch && ntokens == 4));
+
+    if (settings.require_sasl && !check_ascii_auth(c, need_perm,
+                                                   need_prefix_check ? key_token->value : NULL,
+                                                   tokens, ntokens)) {
+        out_string(c, "CLIENT_ERROR unauthorized");
+        return;
+    }
+#endif
 
     do {
         while (key_token->length != 0) {
@@ -13820,7 +13828,7 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
     size_t nkey = tokens[KEY_TOKEN].length;
 
 #ifdef SASL_ENABLED
-    if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key, tokens, ntokens)) {
+    if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ATTR, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
