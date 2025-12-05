@@ -13919,11 +13919,11 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true, false);
     }
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
+    else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
     {
         process_get_command(c, tokens, ntokens, false, true);
     }
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gats") == 0))
+    else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "gats") == 0))
     {
         process_get_command(c, tokens, ntokens, true, true);
     }
