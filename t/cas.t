@@ -80,7 +80,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 # cant parse barval2\r\n
 $cmd = "cas foo 0 0 6"; $val = "barva2";
 $rst =
-"ERROR unknown command
+"CLIENT_ERROR bad command line format
 ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 

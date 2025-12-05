@@ -91,7 +91,7 @@ ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 10"; $val = "0000000000";
 $rst =
-"ERROR unknown command
+"CLIENT_ERROR bad command line format
 ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
@@ -100,7 +100,7 @@ $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
 $rst =
-"ERROR unknown command
+"CLIENT_ERROR bad command line format
 ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
@@ -169,7 +169,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "11111111111";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no arguments";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
 $rst =
@@ -179,7 +179,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "set kvkey 0 10"; $val = "0000000000";
 $rst =
-"ERROR unknown command
+"CLIENT_ERROR bad command line format
 ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
@@ -188,7 +188,7 @@ $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
 $rst =
-"ERROR unknown command
+"CLIENT_ERROR bad command line format
 ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
@@ -200,7 +200,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 16 5"; $val = "666666";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no arguments";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
 $rst =

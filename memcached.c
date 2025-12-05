@@ -79,6 +79,13 @@
         return; \
     }
 
+#define CHECK_NTOKENS_MIN(ntokens, min) \
+    if (ntokens < min) { \
+        print_invalid_command(c, tokens, ntokens); \
+        out_string(c, "CLIENT_ERROR bad command line format"); \
+        return; \
+    }
+
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -8759,7 +8766,7 @@ static void write_ascii_stats_buffer(conn *c)
 
 static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL && ntokens >= 2);
+    assert(c != NULL);
     const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
     if (ntokens == 2) {
@@ -8813,6 +8820,12 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     token_t *key_token;
     int64_t exptime = 0;
+
+    if (should_touch) {
+        CHECK_NTOKENS_MIN(ntokens, 4);
+    } else {
+        CHECK_NTOKENS_MIN(ntokens, 3);
+    }
 
     key_token = &tokens[KEY_TOKEN];
     if (should_touch) {
@@ -8921,6 +8934,8 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 {
     uint32_t lenkeys, numkeys;
 
+    CHECK_NTOKENS_EQ(ntokens, 4);
+
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
@@ -8964,6 +8979,12 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     int vlen;
     uint64_t req_cas_id=0;
     item *it;
+
+    if (handle_cas) {
+        CHECK_NTOKENS(ntokens, 7, 8);
+    } else {
+        CHECK_NTOKENS(ntokens, 6, 7);
+    }
 
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
@@ -9062,6 +9083,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     uint64_t delta;
     char *key;
     size_t nkey;
+
+    CHECK_NTOKENS(ntokens, 4, 8);
 
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
@@ -9168,6 +9191,8 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     char *key;
     size_t nkey;
 
+    CHECK_NTOKENS(ntokens, 3, 5);
+
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -9224,6 +9249,12 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     int64_t exptime = 0; /* default delay value */
     bool delay_flag;
     ENGINE_ERROR_CODE ret;
+
+    if (flush_all) {
+        CHECK_NTOKENS(ntokens, 2, 4);
+    } else {
+        CHECK_NTOKENS(ntokens, 3, 5);
+    }
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_FLUSH, NULL, tokens, ntokens)) {
@@ -9784,18 +9815,14 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 {
     char *config_key;
 
+    CHECK_NTOKENS(ntokens, 3, 4);
+
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
 #endif
-
-    if (ntokens < 3 || ntokens > 4) {
-        print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
-        return;
-    }
 
     config_key = tokens[SUBCOMMAND_TOKEN].value;
 
@@ -9877,6 +9904,8 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
         return;
     }
 
+    CHECK_NTOKENS(ntokens, 3, 4);
+
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
@@ -9933,6 +9962,8 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     char *filepath;
     char *prefix = NULL;
     int  nprefix = -1; /* all prefixes */
+
+    CHECK_NTOKENS(ntokens, 3, 6);
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
@@ -10583,6 +10614,8 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
 
 static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    CHECK_NTOKENS_MIN(ntokens, 4);
+
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_SCAN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
@@ -10593,17 +10626,15 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
     /* keyscan command format : scan key <cursor> [count <count>] [match <pattern>] [type <type>] */
     if (strcmp(tokens[1].value, "key") == 0) {
         process_keyscan_command(c, tokens, ntokens);
-        return;
     }
-
     /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
-    if (strcmp(tokens[1].value, "prefix") == 0) {
+    else if (strcmp(tokens[1].value, "prefix") == 0) {
         process_prefixscan_command(c, tokens, ntokens);
-        return;
     }
-
-    print_invalid_command(c, tokens, ntokens);
-    out_string(c, "ERROR unknown command");
+    else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "ERROR unknown command");
+    }
 }
 #endif
 
@@ -10612,6 +10643,11 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
 {
     char *subcommand;
     bool already_check = false;
+
+    if (ntokens < 3 || ntokens > 4) {
+        out_string(c, "\t* Usage: cmdlog [start [path] | stop | stats]\n");
+        return;
+    }
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
@@ -10622,9 +10658,9 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
 
     subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
-    if (ntokens > 2 && strcmp(subcommand, "start") == 0) {
+    if (strcmp(subcommand, "start") == 0) {
         char *fpath = NULL;
-        if (ntokens > 3) {
+        if (ntokens == 4) {
             fpath = tokens[SUBCOMMAND_TOKEN+1].value;
         }
         int ret = cmdlog_start(fpath, &already_check);
@@ -10637,14 +10673,14 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
         } else {
             out_string(c, "\tcommand logging failed to start.\n");
         }
-    } else if (ntokens > 2 && strcmp(subcommand, "stop") == 0) {
+    } else if (ntokens == 3 && strcmp(subcommand, "stop") == 0) {
         cmdlog_stop(&already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already stopped.\n");
         } else {
             out_string(c, "\tcommand logging stopped.\n");
         }
-    } else if (ntokens > 2 && strcmp(subcommand, "stats") == 0) {
+    } else if (ntokens == 3 && strcmp(subcommand, "stats") == 0) {
         char *str = cmdlog_stats();
         if (str) {
             write_and_free(c, str, strlen(str));
@@ -10663,6 +10699,13 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     char *subcommand;
     bool already_check = false;
 
+    if (ntokens < 3 || ntokens > 4) {
+        out_string(c,
+        "\t" "* Usage: lqdetect [start [threshold] | stop | show | stats]" "\n"
+        );
+        return;
+    }
+
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
@@ -10672,9 +10715,9 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 
     subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
-    if (ntokens > 2 && strcmp(subcommand, "start") == 0) {
+    if (strcmp(subcommand, "start") == 0) {
         uint32_t threshold = 0;
-        if (ntokens > 3) {
+        if (ntokens == 4) {
             if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &threshold)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
@@ -10691,14 +10734,14 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         } else {
             out_string(c, "\tlong query detection failed to start.\n");
         }
-    } else if (ntokens > 2 && strcmp(subcommand, "stop") == 0) {
+    } else if (ntokens == 3 && strcmp(subcommand, "stop") == 0) {
         lqdetect_stop(&already_check);
         if (already_check) {
             out_string(c, "\tlong query detection already stopped.\n");
         } else {
             out_string(c, "\tlong query detection stopped.\n");
         }
-    } else if (ntokens > 2 && strcmp(subcommand, "show") == 0) {
+    } else if (ntokens == 3 && strcmp(subcommand, "show") == 0) {
         int size;
         char *str = lqdetect_result_get(&size);
         if (str) {
@@ -10706,7 +10749,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         } else {
             out_string(c, "SERVER_ERROR out of memory writing show response");
         }
-    } else if (ntokens > 2 && strcmp(subcommand, "stats") == 0) {
+    } else if (ntokens == 3 && strcmp(subcommand, "stats") == 0) {
         char *str = lqdetect_stats();
         if (str) {
             write_and_free(c, str, strlen(str));
@@ -10724,6 +10767,8 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 #ifdef SASL_ENABLED
 static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    CHECK_NTOKENS_MIN(ntokens, 3);
+
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
     if (strcmp(subcommand, "mech") == 0) {
@@ -10740,6 +10785,8 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 
 static void process_reload_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    CHECK_NTOKENS_EQ(ntokens, 3);
+
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
     if (strcmp(subcommand, "auth") == 0) {
@@ -10758,6 +10805,8 @@ static void process_reload_command(conn *c, token_t *tokens, const size_t ntoken
 static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
 {
     int32_t delay;
+
+    CHECK_NTOKENS(ntokens, 2, 3);
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
@@ -11124,6 +11173,8 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key;
     size_t nkey;
 
+    CHECK_NTOKENS(ntokens, 5, 13);
+
     nkey = tokens[LOP_KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -11480,6 +11531,8 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *subcommand;
     char *key;
     size_t nkey;
+
+    CHECK_NTOKENS(ntokens, 5, 12);
 
     nkey = tokens[SOP_KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
@@ -12702,6 +12755,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey;
     int subcommid;
 
+    CHECK_NTOKENS(ntokens, 6, 13);
+
     nkey = tokens[MOP_KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -12951,6 +13006,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key;
     size_t nkey;
     int subcommid;
+
+    CHECK_NTOKENS(ntokens, 5, 14);
 
     nkey = tokens[BOP_KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
@@ -13646,6 +13703,8 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     char *key;
     size_t nkey;
 
+    CHECK_NTOKENS(ntokens, 3, 14);
+
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13745,6 +13804,8 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     assert(c->ewouldblock == false);
     char *key;
     size_t nkey;
+
+    CHECK_NTOKENS(ntokens, 4, 8);
 
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
@@ -13875,6 +13936,8 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
     char *key;
     size_t nkey;
 
+    CHECK_NTOKENS(ntokens, 4, 5);
+
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13931,7 +13994,9 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
      */
     token_t tokens[MAX_TOKENS+1];
     size_t ntokens;
-    int comm;
+    char *cmd;
+    int clen;
+    bool unknown_command = false;
 
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
 
@@ -13961,173 +14026,176 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
 
-    if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0))
-    {
-        process_get_command(c, tokens, ntokens, false, false);
+    if (ntokens < 2 || tokens[COMMAND_TOKEN].length < 3) {
+        out_string(c, "ERROR unknown command");
+        return;
     }
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0))
-    {
-        process_get_command(c, tokens, ntokens, true, false);
-    }
-    else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
-    {
-        process_get_command(c, tokens, ntokens, false, true);
-    }
-    else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "gats") == 0))
-    {
-        process_get_command(c, tokens, ntokens, true, true);
-    }
-    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
-    {
-        process_mget_command(c, tokens, ntokens, false);
-    }
-    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mgets") == 0))
-    {
-        process_mget_command(c, tokens, ntokens, true);
-    }
-    else if ((ntokens == 6 || ntokens == 7) &&
-        ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
-         (strcmp(tokens[COMMAND_TOKEN].value, "set"    ) == 0 && (comm = (int)OPERATION_SET)) ||
-         (strcmp(tokens[COMMAND_TOKEN].value, "replace") == 0 && (comm = (int)OPERATION_REPLACE)) ||
-         (strcmp(tokens[COMMAND_TOKEN].value, "prepend") == 0 && (comm = (int)OPERATION_PREPEND)) ||
-         (strcmp(tokens[COMMAND_TOKEN].value, "append" ) == 0 && (comm = (int)OPERATION_APPEND)) ))
-    {
-        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, false);
-    }
-    else if ((ntokens == 7 || ntokens == 8) &&
-         (strcmp(tokens[COMMAND_TOKEN].value, "cas"    ) == 0 && (comm = (int)OPERATION_CAS)))
-    {
-        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, true);
-    }
-    else if ((ntokens >= 4 && ntokens <= 8) &&
-        (strcmp(tokens[COMMAND_TOKEN].value, "incr") == 0))
-    {
-        process_arithmetic_command(c, tokens, ntokens, 1);
-    }
-    else if ((ntokens >= 4 && ntokens <= 8) &&
-        (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0))
-    {
-        process_arithmetic_command(c, tokens, ntokens, 0);
-    }
-    else if ((ntokens >= 3 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "delete") == 0))
-    {
-        process_delete_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(tokens[COMMAND_TOKEN].value, "lop") == 0))
-    {
-        process_lop_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 5 && ntokens <= 12) && (strcmp(tokens[COMMAND_TOKEN].value, "sop") == 0))
-    {
-        process_sop_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 6 && ntokens <= 13) && (strcmp(tokens[COMMAND_TOKEN].value, "mop") == 0))
-    {
-        process_mop_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 5 && ntokens <= 14) && (strcmp(tokens[COMMAND_TOKEN].value, "bop") == 0))
-    {
-        process_bop_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 3 && ntokens <= 14) && (strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0))
-    {
-        process_getattr_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 4 && ntokens <=  8) && (strcmp(tokens[COMMAND_TOKEN].value, "setattr") == 0))
-    {
-        process_setattr_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0))
-    {
-        process_stats_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 2 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0))
-    {
-        process_flush_command(c, tokens, ntokens, true);
-    }
-    else if ((ntokens >= 3 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_prefix") == 0))
-    {
-        process_flush_command(c, tokens, ntokens, false);
-    }
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
-    {
-        process_config_command(c, tokens, ntokens);
-    }
-    else if ((ntokens >= 4 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "touch") == 0))
-    {
-        process_touch_command(c, tokens, ntokens);
-    }
-#ifdef ENABLE_ZK_INTEGRATION
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0))
-    {
-        process_zkensemble_command(c, tokens, ntokens);
-    }
-#endif
-    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0))
-    {
-        out_string(c, "VERSION " VERSION);
-    }
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "dump") == 0))
-    {
-        process_dump_command(c, tokens, ntokens);
-    }
-    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
-    {
-        LOCK_STATS();
-        mc_stats.quit_conns++;
-        UNLOCK_STATS();
-        conn_set_state(c, conn_closing);
-    }
-    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0))
-    {
-        process_help_command(c, tokens, ntokens);
-    }
-#ifdef SCAN_COMMAND
-    else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "scan") == 0))
-    {
-        process_scan_command(c, tokens, ntokens);
-    }
-#endif
-#ifdef COMMAND_LOGGING
-    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "cmdlog") == 0))
-    {
-        process_cmdlog_command(c, tokens, ntokens);
-    }
-#endif
-#ifdef DETECT_LONG_QUERY
-    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "lqdetect") == 0))
-    {
-        process_lqdetect_command(c, tokens, ntokens);
-    }
-#endif
-    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "ready") == 0))
-    {
-        char *response = "READY";
-#ifdef ENABLE_ZK_INTEGRATION
-        if (arcus_zk_initalized()) {
-            arcus_zk_stats zk_stats;
-            arcus_zk_get_stats(&zk_stats);
-            if (!zk_stats.zk_ready) response = "NOT_READY";
+
+    cmd = tokens[COMMAND_TOKEN].value;
+    clen = tokens[COMMAND_TOKEN].length;
+
+    if (cmd[0] == 'g') {
+        if (clen == 3 && strcmp(cmd, "get") == 0) {
+            process_get_command(c, tokens, ntokens, false, false);
+        } else if (clen == 4 && strcmp(cmd, "gets") == 0) {
+            process_get_command(c, tokens, ntokens, true, false);
+        } else if (clen == 3 && strcmp(cmd, "gat") == 0) {
+            process_get_command(c, tokens, ntokens, false, true);
+        } else if (clen == 4 && strcmp(cmd, "gats") == 0) {
+            process_get_command(c, tokens, ntokens, true, true);
+        } else if (clen == 7 && strcmp(cmd, "getattr") == 0) {
+            process_getattr_command(c, tokens, ntokens);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'm' && cmd[1] == 'g') {
+        if (strcmp(cmd, "mget") == 0) {
+            process_mget_command(c, tokens, ntokens, false);
+        } else if (strcmp(cmd, "mgets") == 0) {
+            process_mget_command(c, tokens, ntokens, true);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 's' && cmd[1] == 'e') {
+        if (strcmp(cmd, "set") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_SET, false);
+        } else if (strcmp(cmd, "setattr") == 0) {
+            process_setattr_command(c, tokens, ntokens);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 't') {
+        if (strcmp(cmd, "touch") == 0) {
+            process_touch_command(c, tokens, ntokens);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[1] == 'o' && cmd[2] == 'p') {
+        if (strcmp(cmd, "bop") == 0) {
+            process_bop_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "mop") == 0) {
+            process_mop_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "sop") == 0) {
+            process_sop_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "lop") == 0) {
+            process_lop_command(c, tokens, ntokens);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'a') {
+        if (strcmp(cmd, "add") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_ADD, false);
+        } else if (strcmp(cmd, "append") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_APPEND, false);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'p') {
+        if (strcmp(cmd, "prepend") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_PREPEND, false);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'c' && cmd[1] == 'a') {
+        if (strcmp(cmd, "cas") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_CAS, true);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'r' && cmd[2] == 'p') {
+        if (strcmp(cmd, "replace") == 0) {
+            process_update_command(c, tokens, ntokens, OPERATION_REPLACE, false);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'i') {
+        if (strcmp(cmd, "incr") == 0) {
+            process_arithmetic_command(c, tokens, ntokens, 1);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'd' && cmd[1] == 'e') {
+        if (strcmp(cmd, "delete") == 0) {
+            process_delete_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "decr") == 0) {
+            process_arithmetic_command(c, tokens, ntokens, 0);
+        } else {
+            unknown_command = true;
+        }
+    } else if (cmd[0] == 'f') {
+        if (strcmp(cmd, "flush_all") == 0) {
+            process_flush_command(c, tokens, ntokens, true);
+        } else if (strcmp(cmd, "flush_prefix") == 0) {
+            process_flush_command(c, tokens, ntokens, false);
+        } else {
+            unknown_command = true;
+        }
+    } else {
+        if (strcmp(cmd, "stats") == 0) {
+            process_stats_command(c, tokens, ntokens);
+        }
+#ifdef SASL_ENABLED
+        else if (strcmp(cmd, "sasl") == 0) {
+            process_sasl_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "reload") == 0) {
+            process_reload_command(c, tokens, ntokens);
         }
 #endif
-        out_string(c, response);
-    }
-#ifdef SASL_ENABLED
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "sasl") == 0))
-    {
-        process_sasl_command(c, tokens, ntokens);
-    }
-    else if ((ntokens == 3) && (strcmp(tokens[COMMAND_TOKEN].value, "reload") == 0))
-    {
-        process_reload_command(c, tokens, ntokens);
-    }
+#ifdef SCAN_COMMAND
+        else if (strcmp(cmd, "scan") == 0) {
+            process_scan_command(c, tokens, ntokens);
+        }
 #endif
-    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
-    {
-        process_shutdown_command(c, tokens, ntokens);
+#ifdef COMMAND_LOGGING
+        else if (strcmp(cmd, "cmdlog") == 0) {
+            process_cmdlog_command(c, tokens, ntokens);
+        }
+#endif
+#ifdef DETECT_LONG_QUERY
+        else if (strcmp(cmd, "lqdetect") == 0) {
+            process_lqdetect_command(c, tokens, ntokens);
+        }
+#endif
+        else if (strcmp(cmd, "config") == 0) {
+            process_config_command(c, tokens, ntokens);
+        }
+#ifdef ENABLE_ZK_INTEGRATION
+        else if (strcmp(cmd, "zkensemble") == 0) {
+            process_zkensemble_command(c, tokens, ntokens);
+        }
+#endif
+        else if (strcmp(cmd, "version") == 0) {
+            CHECK_NTOKENS_EQ(ntokens, 2);
+            out_string(c, "VERSION " VERSION);
+        } else if (strcmp(cmd, "dump") == 0) {
+            process_dump_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "quit") == 0) {
+            CHECK_NTOKENS_EQ(ntokens, 2);
+            LOCK_STATS();
+            mc_stats.quit_conns++;
+            UNLOCK_STATS();
+            conn_set_state(c, conn_closing);
+        } else if (strcmp(cmd, "ready") == 0) {
+            CHECK_NTOKENS_EQ(ntokens, 2);
+            char *response = "READY";
+#ifdef ENABLE_ZK_INTEGRATION
+            if (arcus_zk_initalized()) {
+                arcus_zk_stats zk_stats;
+                arcus_zk_get_stats(&zk_stats);
+                if (!zk_stats.zk_ready) response = "NOT_READY";
+            }
+#endif
+            out_string(c, response);
+        } else if (strcmp(cmd, "shutdown") == 0) {
+            process_shutdown_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "help") == 0) {
+            process_help_command(c, tokens, ntokens);
+        } else {
+            unknown_command = true;
+        }
     }
-    else /* unknown command */
-    {
+
+    if (unknown_command) {
         if (settings.extensions.ascii != NULL) {
             process_extension_command(c, tokens, ntokens);
         } else {
