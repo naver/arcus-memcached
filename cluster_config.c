@@ -81,8 +81,29 @@ struct cluster_config {
     EXTENSION_LOGGER_DESCRIPTOR *logger; // memcached logger
     int       verbose;                   // log level
     bool      is_valid;                  // is this configuration valid?
+    bool      enable_shard_key;          // use shard key feature
 };
 
+
+static const char *get_shard_key(const char *key, uint32_t nkey, uint32_t *nshardkey)
+{
+    const char *left = memchr(key, '{', nkey);
+    if (left == NULL) {
+        return NULL;
+    }
+
+    const char *right = memchr(left + 1, '}', nkey - (left - key) - 1);
+    if (right == NULL) {
+        return NULL;
+    }
+
+    *nshardkey = right - left - 1;
+    if (*nshardkey == 0) {
+        return NULL;
+    }
+
+    return left + 1;
+}
 
 static void hash_md5(const char *key, uint32_t nkey, unsigned char *result)
 {
@@ -93,9 +114,18 @@ static void hash_md5(const char *key, uint32_t nkey, unsigned char *result)
     MD5Final(result, &ctx);
 }
 
-static uint32_t hash_ketama(const char *key, uint32_t nkey)
+static uint32_t hash_ketama(const char *key, uint32_t nkey, bool enable_shard_key)
 {
     unsigned char digest[16];
+
+    if (enable_shard_key) {
+        uint32_t nshardkey;
+        const char *shardkey = get_shard_key(key, nkey, &nshardkey);
+        if (shardkey) {
+            key = shardkey;
+            nkey = nshardkey;
+        }
+    }
 
     hash_md5(key, nkey, digest);
     return (uint32_t)((digest[3] << 24)
@@ -591,6 +621,12 @@ struct cluster_config *cluster_config_init(const char *node_name,
     config->is_valid = false;
     config->logger = logger;
     config->verbose = verbose;
+
+    char *enable_shard_key = getenv("ARCUS_ENABLE_SHARD_KEY");
+    if (enable_shard_key && strcmp(enable_shard_key, "1") == 0) {
+        config->enable_shard_key = true;
+    }
+
     return config;
 }
 
@@ -680,7 +716,7 @@ int cluster_config_key_is_mine(struct cluster_config *config,
                                uint32_t *key_id, uint32_t *self_id)
 {
     assert(config && config->continuum);
-    uint32_t digest = hash_ketama(key, nkey);
+    uint32_t digest = hash_ketama(key, nkey, config->enable_shard_key);
     int ret = 0;
 
     pthread_mutex_lock(&config->ketama_lock);

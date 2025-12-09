@@ -164,7 +164,8 @@ void safe_hexatostr(const unsigned char *bin, const int size, char *str) {
 static inline bool mc_isnamechar(int c) {
     return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
             (c >= '0' && c <= '9') ||
-            (c == '_') || (c == '-') || (c == '+') || (c == '.'));
+            (c == '_') || (c == '-') || (c == '+') || (c == '.') ||
+            (c == '{') || (c == '}'));
 }
 
 static inline bool mc_ishyphon(int c) {
