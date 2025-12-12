@@ -222,6 +222,14 @@ struct settings {
     int maxconns;
     int port;
     int udpport;
+    int maxcore;
+    bool daemonize;
+    bool lock_memory;
+    bool preallocate;
+    char *username;
+    char *pid_file;
+    char *engine_path;
+    char *engine_config;
     size_t sticky_limit;
     char *inter;
     int verbose;

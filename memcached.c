@@ -365,6 +365,14 @@ static void settings_init(void)
     settings.access = 0700;
     settings.port = 11211;
     settings.udpport = 0;
+    settings.maxcore = 0;
+    settings.daemonize = false;
+    settings.lock_memory = false;
+    settings.preallocate = false;
+    settings.username = NULL;
+    settings.pid_file = NULL;
+    settings.engine_path = NULL;
+    settings.engine_config = NULL;
     /* By default this string should be NULL for getaddrinfo() */
     settings.inter = NULL;
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
@@ -8526,6 +8534,14 @@ static void process_stats_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
+    APPEND_STAT("maxcore", "%d", settings.maxcore);
+    APPEND_STAT("daemonize", "%s",  settings.daemonize ? "yes" : "no");
+    APPEND_STAT("lock_memory", "%s",  settings.lock_memory ? "yes" : "no");
+    APPEND_STAT("preallocate", "%s",  settings.preallocate ? "yes" : "no");
+    APPEND_STAT("username", "%s", settings.username ? settings.username : "NULL");
+    APPEND_STAT("pid_file", "%s", settings.pid_file ? settings.pid_file : "NULL");
+    APPEND_STAT("engine_path", "%s", settings.engine_path ? settings.engine_path : "NULL");
+    APPEND_STAT("engine_config", "%s", settings.engine_config ? settings.engine_config : "NULL");
     APPEND_STAT("sticky_limit", "%llu", (unsigned long long)settings.sticky_limit);
     APPEND_STAT("inter", "%s", settings.inter ? settings.inter : "NULL");
     APPEND_STAT("verbosity", "%d", settings.verbose);
@@ -16014,12 +16030,6 @@ static void close_listen_sockets(void)
 int main (int argc, char **argv)
 {
     int c;
-    bool lock_memory = false;
-    bool do_daemonize = false;
-    bool preallocate = false;
-    int maxcore = 0;
-    char *username = NULL;
-    char *pid_file = NULL;
     struct passwd *pw;
     struct rlimit rlim;
     char unit = '\0';
@@ -16030,8 +16040,6 @@ int main (int argc, char **argv)
     bool tcp_specified = false;
     bool udp_specified = false;
 
-    const char *engine = NULL;
-    const char *engine_config = NULL;
     char old_options[1024] = { [0] = '\0' };
     char *old_opts = old_options;
 
@@ -16149,7 +16157,7 @@ int main (int argc, char **argv)
             usage_license();
             exit(EXIT_SUCCESS);
         case 'k':
-            lock_memory = true;
+            settings.lock_memory = true;
             break;
         case 'v':
             settings.verbose++;
@@ -16159,10 +16167,10 @@ int main (int argc, char **argv)
             settings.inter = strdup(optarg);
             break;
         case 'd':
-            do_daemonize = true;
+            settings.daemonize = true;
             break;
         case 'r':
-            maxcore = 1;
+            settings.maxcore = 1;
             break;
         case 'R':
             settings.reqs_per_event = atoi(optarg);
@@ -16173,10 +16181,10 @@ int main (int argc, char **argv)
             }
             break;
         case 'u':
-            username = optarg;
+            settings.username = optarg;
             break;
         case 'P':
-            pid_file = optarg;
+            settings.pid_file = optarg;
             break;
         case 'f':
             settings.factor = atof(optarg);
@@ -16219,7 +16227,7 @@ int main (int argc, char **argv)
             break;
         case 'L' :
             if (enable_large_pages() == 0) {
-                preallocate = true;
+                settings.preallocate = true;
             }
             break;
         case 'C' :
@@ -16278,10 +16286,10 @@ int main (int argc, char **argv)
             }
             break;
         case 'E':
-            engine = optarg;
+            settings.engine_path = optarg;
             break;
         case 'e':
-            engine_config = optarg;
+            settings.engine_config = optarg;
             break;
         case 'q':
             settings.allow_detailed = false;
@@ -16350,7 +16358,7 @@ int main (int argc, char **argv)
     if (settings.prefix_delimiter != ':') {
         old_opts += sprintf(old_opts, "prefix_delimiter=%c;", settings.prefix_delimiter);
     }
-    if (preallocate) {
+    if (settings.preallocate) {
         old_opts += sprintf(old_opts, "preallocate=true;");
     }
     if (settings.use_cas == false) {
@@ -16438,24 +16446,24 @@ int main (int argc, char **argv)
         }
     }
 
-    if (engine_config != NULL && strlen(old_options) > 0) {
+    if (settings.engine_config != NULL && strlen(old_options) > 0) {
         /* If there is -e, just append it to the "old" options that we have
          * accumulated so far.
          */
-        old_opts += sprintf(old_opts, "%s", engine_config);
-        engine_config = NULL; /* So we set it to old_options below... */
+        old_opts += sprintf(old_opts, "%s", settings.engine_config);
+        settings.engine_config = NULL; /* So we set it to old_options below... */
         /*
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "ERROR: You can't mix -e with the old options\n");
         return EX_USAGE;
         */
     }
-    if (engine_config == NULL && strlen(old_options) > 0) {
-        engine_config = old_options;
+    if (settings.engine_config == NULL && strlen(old_options) > 0) {
+        settings.engine_config = old_options;
     }
-    mc_logger->log(EXTENSION_LOG_INFO, NULL, "engine config: %s\n", engine_config);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "engine config: %s\n", settings.engine_config);
 
-    if (maxcore != 0) {
+    if (settings.maxcore != 0) {
         struct rlimit rlim_new;
         /*
          * First try raising to infinity; if that fails, try bringing
@@ -16532,19 +16540,19 @@ int main (int argc, char **argv)
 
     /* lose root privileges if we have them */
     if (getuid() == 0 || geteuid() == 0) {
-        if (username == 0 || *username == '\0') {
+        if (settings.username == 0 || *settings.username == '\0') {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "can't run as root without the -u switch\n");
             exit(EX_USAGE);
         }
-        if ((pw = getpwnam(username)) == 0) {
+        if ((pw = getpwnam(settings.username)) == 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "can't find the user %s to switch to\n", username);
+                    "can't find the user %s to switch to\n", settings.username);
             exit(EX_NOUSER);
         }
         if (setgid(pw->pw_gid) < 0 || setuid(pw->pw_uid) < 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "failed to assume identity of user %s: %s\n", username,
+                    "failed to assume identity of user %s: %s\n", settings.username,
                     strerror(errno));
             exit(EX_OSERR);
         }
@@ -16552,12 +16560,12 @@ int main (int argc, char **argv)
 
     /* daemonize if requested */
     /* if we want to ensure our ability to dump core, don't chdir to / */
-    if (do_daemonize) {
+    if (settings.daemonize) {
         if (signal(SIGHUP, SIG_IGN) == SIG_ERR) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to ignore SIGHUP: %s", strerror(errno));
         }
-        if (daemonize(maxcore, settings.verbose) == -1) {
+        if (daemonize(settings.maxcore, settings.verbose) == -1) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "failed to daemon() in order to daemonize\n");
             exit(EXIT_FAILURE);
@@ -16565,7 +16573,7 @@ int main (int argc, char **argv)
     }
 
     /* lock paged memory if needed */
-    if (lock_memory) {
+    if (settings.lock_memory) {
 #ifdef HAVE_MLOCKALL
         int res = mlockall(MCL_CURRENT | MCL_FUTURE);
         if (res != 0) {
@@ -16590,12 +16598,12 @@ int main (int argc, char **argv)
 
     /* load and initialize the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
-    if (!load_engine(engine, get_server_api, mc_logger, &engine_handle)) {
+    if (!load_engine(settings.engine_path, get_server_api, mc_logger, &engine_handle)) {
         /* error already reported */
         exit(EXIT_FAILURE);
     }
 
-    if (!init_engine(engine_handle, engine_config, mc_logger)) {
+    if (!init_engine(engine_handle, settings.engine_config, mc_logger)) {
         return false;
     }
 
@@ -16755,8 +16763,8 @@ int main (int argc, char **argv)
     /* Save the PID in the pid file if we're a daemon.
      * Do this after the successful startup of memcached.
      */
-    if (do_daemonize)
-        save_pid(getpid(), pid_file);
+    if (settings.daemonize)
+        save_pid(getpid(), settings.pid_file);
 
     /* enter the event loop */
     event_base_loop(main_base, 0);
@@ -16765,8 +16773,8 @@ int main (int argc, char **argv)
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating arcus memcached shutdown...\n");
 
     /* 1) remove the PID file if we're a daemon */
-    if (do_daemonize)
-        remove_pidfile(pid_file);
+    if (settings.daemonize)
+        remove_pidfile(settings.pid_file);
 
 #ifdef ENABLE_ZK_INTEGRATION
     /* 2) shutdown arcus ZK connection */
