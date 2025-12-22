@@ -137,8 +137,15 @@ static struct event_base *main_base;
 struct thread_stats *default_thread_stats;
 topkeys_t *default_topkeys = NULL;
 
+static bool tcp_specified = false;
+static bool udp_specified = false;
+
 #ifdef ENABLE_ZK_INTEGRATION
 static char *arcus_zk_cfg = NULL;
+static int arcus_zk_to = 0;
+#ifdef PROXY_SUPPORT
+static char *arcus_proxy_cfg = NULL;
+#endif
 #endif
 
 /*
@@ -445,6 +452,15 @@ static int add_msghdr(conn *c)
     }
 
     return 0;
+}
+
+static bool parse_binding_protocol(const char *protstr)
+{
+    if (strcmp(protstr, "ascii") == 0) settings.binding_protocol = ascii_prot;
+    else if (strcmp(protstr, "binary") == 0) settings.binding_protocol = binary_prot;
+    else if (strcmp(protstr, "auto") == 0) settings.binding_protocol = negotiating_prot;
+    else return false;
+    return true;
 }
 
 static const char *prot_text(enum protocol prot)
@@ -16013,6 +16029,75 @@ static void settings_reload_engine_config(void)
     }
 }
 
+static int settings_check(void)
+{
+    if (settings.maxbytes == 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The value of memory limit must be greater than 0.\n");
+        return 1;
+    }
+#ifdef ENABLE_STICKY_ITEM
+    if (settings.maxbytes < settings.sticky_limit) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The value of memory limit cannot be smaller than sticky_limit.\n");
+        return -1;
+    }
+#endif
+    if (settings.reqs_per_event <= 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Number of requests per event must be greater than 0\n");
+        return -1;
+    }
+    if (settings.factor <= 1.0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Factor must be greater than 1\n");
+        return -1;
+    }
+    if (settings.chunk_size <= 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Chunk size must be greater than 0\n");
+        return -1;
+    }
+    if (settings.num_threads <= 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Number of threads must be greater than 0\n");
+        return -1;
+    }
+    /* There're other problems when you get above 64 threads.
+     * In the future we should portably detect # of cores for the
+     * default.
+     */
+    if (settings.num_threads > 64) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "WARNING: Setting a high number of worker"
+                "threads is not recommended.\n"
+                " Set this value to the number of cores in"
+                " your machine or less.\n");
+    }
+    /* small memory allocator needs the maximum item size larger than 20 KB */
+    //if (settings.item_size_max < 1024) {
+    if (settings.item_size_max < 1024 * 20) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Item max size cannot be less than 20KB.\n");
+        return -1;
+    }
+    if (settings.item_size_max > 1024 * 1024 * 128) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Cannot set item size limit higher than 128 mb.\n");
+        return -1;
+    }
+    if (settings.item_size_max > 1024 * 1024) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "WARNING: Setting item max size above 1MB is not"
+            " recommended!\n"
+            " Raising this limit increases the minimum memory requirements\n"
+            " and will decrease your memory efficiency.\n"
+        );
+    }
+
+    return 0;
+}
+
 static void close_listen_sockets(void)
 {
     struct conn *conn;
@@ -16034,21 +16119,11 @@ int main (int argc, char **argv)
     struct rlimit rlim;
     char unit = '\0';
     int size_max = 0;
-    int cache_memory_limit = 0;
-    int sticky_memory_limit = 0;
-
-    bool tcp_specified = false;
-    bool udp_specified = false;
+    uint32_t cache_memory_limit = 0;
+    uint32_t sticky_memory_limit = 0;
 
     char old_options[1024] = { [0] = '\0' };
     char *old_opts = old_options;
-
-#ifdef ENABLE_ZK_INTEGRATION
-    int  arcus_zk_to=0;
-#ifdef PROXY_SUPPORT
-    char *arcus_proxy_cfg = NULL;
-#endif
-#endif
 
     if (!sanitycheck()) {
         return EX_OSERR;
@@ -16125,10 +16200,9 @@ int main (int argc, char **argv)
             settings.socketpath = optarg;
             break;
         case 'm':
-            cache_memory_limit = atoi(optarg);
-            if (cache_memory_limit <= 0) {
+            if (!safe_strtoul(optarg, &cache_memory_limit)) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of memory limit must be greater than 0.\n");
+                    "The value of memory limit is invalid\n");
                 return 1;
             }
             settings.maxbytes = (size_t)cache_memory_limit * 1024 * 1024;
@@ -16138,10 +16212,9 @@ int main (int argc, char **argv)
             break;
 #ifdef ENABLE_STICKY_ITEM
         case 'g':
-            sticky_memory_limit = atoi(optarg);
-            if (sticky_memory_limit <= 0) {
+            if (!safe_strtoul(optarg, &sticky_memory_limit)) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of sticky(gummed) memory limit must be greater than 0.\n");
+                    "The value of sticky(gummed) memory limit is invalid\n");
                 return 1;
             }
             settings.sticky_limit = (size_t)sticky_memory_limit * 1024 * 1024;
@@ -16174,11 +16247,6 @@ int main (int argc, char **argv)
             break;
         case 'R':
             settings.reqs_per_event = atoi(optarg);
-            if (settings.reqs_per_event <= 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Number of requests per event must be greater than 0\n");
-                return 1;
-            }
             break;
         case 'u':
             settings.username = optarg;
@@ -16188,47 +16256,19 @@ int main (int argc, char **argv)
             break;
         case 'f':
             settings.factor = atof(optarg);
-            if (settings.factor <= 1.0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Factor must be greater than 1\n");
-                return 1;
-            }
-           break;
+            break;
         case 'n':
             settings.chunk_size = atoi(optarg);
-            if (settings.chunk_size <= 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Chunk size must be greater than 0\n");
-                return 1;
-            }
             break;
         case 't':
             settings.num_threads = atoi(optarg);
-            if (settings.num_threads <= 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Number of threads must be greater than 0\n");
-                return 1;
-            }
-            /* There're other problems when you get above 64 threads.
-             * In the future we should portably detect # of cores for the
-             * default.
-             */
-            if (settings.num_threads > 64) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "WARNING: Setting a high number of worker"
-                        "threads is not recommended.\n"
-                        " Set this value to the number of cores in"
-                        " your machine or less.\n");
-            }
             break;
         case 'D':
             settings.prefix_delimiter = optarg[0];
             settings.detail_enabled = 1;
             break;
         case 'L' :
-            if (enable_large_pages() == 0) {
-                settings.preallocate = true;
-            }
+            settings.preallocate = true;
             break;
         case 'C' :
             settings.use_cas = false;
@@ -16237,13 +16277,7 @@ int main (int argc, char **argv)
             settings.backlog = atoi(optarg);
             break;
         case 'B':
-            if (strcmp(optarg, "auto") == 0) {
-                settings.binding_protocol = negotiating_prot;
-            } else if (strcmp(optarg, "binary") == 0) {
-                settings.binding_protocol = binary_prot;
-            } else if (strcmp(optarg, "ascii") == 0) {
-                settings.binding_protocol = ascii_prot;
-            } else {
+            if (!parse_binding_protocol(optarg)) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Invalid value for binding protocol: %s\n"
                         " -- should be one of auto, binary, or ascii\n", optarg);
@@ -16263,26 +16297,6 @@ int main (int argc, char **argv)
                 settings.item_size_max = size_max;
             } else {
                 settings.item_size_max = atoi(optarg);
-            }
-            /* small memory allocator needs the maximum item size larger than 20 KB */
-            //if (settings.item_size_max < 1024) {
-            if (settings.item_size_max < 1024 * 20) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Item max size cannot be less than 20KB.\n");
-                return 1;
-            }
-            if (settings.item_size_max > 1024 * 1024 * 128) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Cannot set item size limit higher than 128 mb.\n");
-                return 1;
-            }
-            if (settings.item_size_max > 1024 * 1024) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "WARNING: Setting item max size above 1MB is not"
-                    " recommended!\n"
-                    " Raising this limit increases the minimum memory requirements\n"
-                    " and will decrease your memory efficiency.\n"
-                );
             }
             break;
         case 'E':
@@ -16341,13 +16355,16 @@ int main (int argc, char **argv)
         }
     }
 
-#ifdef ENABLE_STICKY_ITEM
-    if (settings.maxbytes < settings.sticky_limit) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-            "The value of memory limit cannot be smaller than sticky_limit.\n");
+    if (settings_check() != 0) {
         return 1;
     }
-#endif
+
+    if (udp_specified && settings.udpport != 0 && !tcp_specified) {
+        settings.port = settings.udpport;
+    }
+    if (settings.preallocate && enable_large_pages() != 0) {
+        settings.preallocate = false;
+    }
 
     /* build options to pass to the cache/storage engine. */
     old_opts += sprintf(old_opts, "num_threads=%lu;", (unsigned long)settings.num_threads);
@@ -16396,10 +16413,6 @@ int main (int argc, char **argv)
         if (settings.topkeys < 0) {
             settings.topkeys = 0;
         }
-    }
-
-    if (udp_specified && settings.udpport != 0 && !tcp_specified) {
-        settings.port = settings.udpport;
     }
 
     /* Following code of setting max collection size will be deprecated. */
