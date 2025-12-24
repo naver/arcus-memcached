@@ -14003,6 +14003,38 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
     }
 }
 
+static void process_version_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    CHECK_NTOKENS_EQ(ntokens, 2);
+
+    out_string(c, "VERSION " VERSION);
+}
+
+static void process_quit_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    CHECK_NTOKENS_EQ(ntokens, 2);
+
+    LOCK_STATS();
+    mc_stats.quit_conns++;
+    UNLOCK_STATS();
+    conn_set_state(c, conn_closing);
+}
+
+static void process_ready_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    CHECK_NTOKENS_EQ(ntokens, 2);
+
+    char *response = "READY";
+#ifdef ENABLE_ZK_INTEGRATION
+    if (arcus_zk_initalized()) {
+        arcus_zk_stats zk_stats;
+        arcus_zk_get_stats(&zk_stats);
+        if (!zk_stats.zk_ready) response = "NOT_READY";
+    }
+#endif
+    out_string(c, response);
+}
+
 static void process_command_ascii(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
@@ -14181,27 +14213,13 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         }
 #endif
         else if (strcmp(cmd, "version") == 0) {
-            CHECK_NTOKENS_EQ(ntokens, 2);
-            out_string(c, "VERSION " VERSION);
+            process_version_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "dump") == 0) {
             process_dump_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "quit") == 0) {
-            CHECK_NTOKENS_EQ(ntokens, 2);
-            LOCK_STATS();
-            mc_stats.quit_conns++;
-            UNLOCK_STATS();
-            conn_set_state(c, conn_closing);
+            process_quit_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "ready") == 0) {
-            CHECK_NTOKENS_EQ(ntokens, 2);
-            char *response = "READY";
-#ifdef ENABLE_ZK_INTEGRATION
-            if (arcus_zk_initalized()) {
-                arcus_zk_stats zk_stats;
-                arcus_zk_get_stats(&zk_stats);
-                if (!zk_stats.zk_ready) response = "NOT_READY";
-            }
-#endif
-            out_string(c, response);
+            process_ready_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "shutdown") == 0) {
             process_shutdown_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "help") == 0) {
