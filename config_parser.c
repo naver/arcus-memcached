@@ -147,7 +147,7 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
 
                   if (items[ii].datatype == DT_SIZE) {
                       uint64_t val;
-                      if (safe_strtoull(value, &val)) {
+                      if (safe_strtoull(value, &val) && val <= UINT64_MAX / multiplier) {
                           *items[ii].value.dt_size = (size_t)(val * multiplier);
                           items[ii].found = true;
                       } else {
@@ -155,7 +155,7 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
                       }
                   } else {
                       uint32_t val;
-                      if (safe_strtoul(value, &val)) {
+                      if (safe_strtoul(value, &val) && val <= UINT32_MAX / multiplier) {
                           *items[ii].value.dt_uint32 = val * multiplier;
                           items[ii].found = true;
                       } else {
