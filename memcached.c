@@ -309,7 +309,7 @@ static bool grow_dynamic_buffer(conn *c, size_t needed)
 
 static void disable_stats_detail(void)
 {
-    settings.detail_enabled = 0;
+    settings.detail_enabled = false;
     mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                    "Detailed stats internally disabled.\n");
 }
@@ -387,13 +387,13 @@ static void settings_init(void)
     settings.sticky_limit = 0;        /* default: 0 MB */
     settings.verbose = 0;
     settings.oldest_live = 0;
-    settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
+    settings.evict_to_free = true;    /* push old items out of cache when memory runs out */
     settings.socketpath = NULL;       /* by default, not using a unix socket */
     settings.factor = 1.25;
     settings.chunk_size = 48;         /* space for a modest key and value */
     settings.num_threads = 4;         /* N workers */
     settings.prefix_delimiter = ':';
-    settings.detail_enabled = 0;
+    settings.detail_enabled = false;
     settings.allow_detailed = true;
     settings.reqs_per_event = DEFAULT_REQS_PER_EVENT;
     settings.backlog = 1024;
@@ -4228,9 +4228,9 @@ static void process_bin_stat(conn *c)
                 append_bin_stats("detailed", strlen("detailed"), dump_buf, len, c);
                 free(dump_buf);
             } else if (strncmp(subcmd_pos, " on", 3) == 0) {
-                settings.detail_enabled = 1;
+                settings.detail_enabled = true;
             } else if (strncmp(subcmd_pos, " off", 4) == 0) {
-                settings.detail_enabled = 0;
+                settings.detail_enabled = false;
             } else {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
                 return;
@@ -8264,11 +8264,11 @@ inline static void process_stats_detail(conn *c, const char *command)
 
     if (settings.allow_detailed) {
         if (strcmp(command, "on") == 0) {
-            settings.detail_enabled = 1;
+            settings.detail_enabled = true;
             out_string(c, "OK");
         }
         else if (strcmp(command, "off") == 0) {
-            settings.detail_enabled = 0;
+            settings.detail_enabled = false;
             out_string(c, "OK");
         }
         else if (strcmp(command, "dump") == 0) {
@@ -16226,7 +16226,7 @@ int main (int argc, char **argv)
             settings.maxbytes = (size_t)cache_memory_limit * 1024 * 1024;
             break;
         case 'M':
-            settings.evict_to_free = 0;
+            settings.evict_to_free = false;
             break;
 #ifdef ENABLE_STICKY_ITEM
         case 'g':
@@ -16283,7 +16283,7 @@ int main (int argc, char **argv)
             break;
         case 'D':
             settings.prefix_delimiter = optarg[0];
-            settings.detail_enabled = 1;
+            settings.detail_enabled = true;
             break;
         case 'L' :
             settings.preallocate = true;
@@ -16387,7 +16387,7 @@ int main (int argc, char **argv)
     /* build options to pass to the cache/storage engine. */
     old_opts += sprintf(old_opts, "num_threads=%lu;", (unsigned long)settings.num_threads);
     old_opts += sprintf(old_opts, "cache_size=%llu;", (unsigned long long)settings.maxbytes);
-    if (settings.evict_to_free == 0) {
+    if (settings.evict_to_free == false) {
         old_opts += sprintf(old_opts, "eviction=false;");
     }
 #ifdef ENABLE_STICKY_ITEM
