@@ -16052,7 +16052,7 @@ static int settings_check(void)
     if (settings.maxbytes == 0) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
             "The value of memory limit must be greater than 0.\n");
-        return 1;
+        return -1;
     }
 #ifdef ENABLE_STICKY_ITEM
     if (settings.maxbytes < settings.sticky_limit) {
