@@ -16273,7 +16273,7 @@ int main (int argc, char **argv)
             settings.pid_file = optarg;
             break;
         case 'f':
-            settings.factor = atof(optarg);
+            settings.factor = strtof(optarg, NULL);
             break;
         case 'n':
             settings.chunk_size = atoi(optarg);

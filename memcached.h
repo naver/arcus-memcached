@@ -237,7 +237,7 @@ struct settings {
     bool evict_to_free;
     char *socketpath;   /* path to unix socket if using local socket */
     int access;  /* access mask (a la chmod) for unix domain socket */
-    double factor;          /* chunk size growth factor */
+    float factor;          /* chunk size growth factor */
     int chunk_size;
     int num_threads;        /* number of worker (without dispatcher) libevent threads to run */
     char prefix_delimiter;  /* character that marks a key prefix (for stats) */
