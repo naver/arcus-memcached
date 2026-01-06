@@ -15938,13 +15938,19 @@ static SERVER_HANDLE_V1 *get_server_api(void)
  * Load a shared object and initialize all the extensions in there.
  *
  * @param soname the name of the shared object (may not be NULL)
- * @param config optional configuration parameters
  * @return true if success, false otherwise
  */
-static bool load_extension(const char *soname, const char *config)
+static bool load_extension(char *soname)
 {
     if (soname == NULL) {
         return false;
+    }
+
+    /* Optional configuration parameters */
+    char *config = strchr(soname, ',');
+    if (config != NULL) {
+        *config = '\0';
+        ++config;
     }
 
     /* Hack to remove the warning from C99 */
@@ -15985,6 +15991,10 @@ static bool load_extension(const char *soname, const char *config)
     if (settings.verbose > 0) {
         mc_logger->log(EXTENSION_LOG_INFO, NULL,
                 "Loaded extensions from: %s\n", soname);
+    }
+
+    if (config != NULL) {
+        *(config - 1) = ',';
     }
 
     return true;
@@ -16336,18 +16346,8 @@ int main (int argc, char **argv)
 #endif
             break;
         case 'X' :
-            {
-                char *ptr = strchr(optarg, ',');
-                if (ptr != NULL) {
-                    *ptr = '\0';
-                    ++ptr;
-                }
-                if (!load_extension(optarg, ptr)) {
-                    exit(EXIT_FAILURE);
-                }
-                if (ptr != NULL) {
-                    *(ptr - 1) = ',';
-                }
+            if (!load_extension(optarg)) {
+                exit(EXIT_FAILURE);
             }
             break;
 #ifdef ENABLE_ZK_INTEGRATION
