@@ -35,7 +35,8 @@ enum config_datatype {
    DT_BOOL,
    DT_STRING,
    DT_CONFIGFILE,
-   DT_CHAR
+   DT_CHAR,
+   DT_CALLBACK
 };
 
 /**
@@ -48,6 +49,7 @@ union config_value {
    bool *dt_bool;
    char **dt_string;
    char *dt_char;
+   bool (*dt_callback)(char *);
 };
 
 /**

@@ -194,6 +194,11 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
                   ret = -1;
                }
                break;
+            case DT_CALLBACK:
+               if (!items[ii].value.dt_callback(value)) {
+                  ret = -1;
+               }
+               break;
             case DT_CONFIGFILE:
                {
                   int r = read_config_file(value, items, error);
