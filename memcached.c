@@ -15947,10 +15947,11 @@ static bool load_extension(char *soname)
     }
 
     /* Optional configuration parameters */
-    char *config = strchr(soname, ',');
-    if (config != NULL) {
-        *config = '\0';
-        ++config;
+    char *config = NULL;
+    char *comma = strchr(soname, ',');
+    if (comma != NULL) {
+        *comma = '\0';
+        config = comma + 1;
     }
 
     /* Hack to remove the warning from C99 */
@@ -15993,8 +15994,8 @@ static bool load_extension(char *soname)
                 "Loaded extensions from: %s\n", soname);
     }
 
-    if (config != NULL) {
-        *(config - 1) = ',';
+    if (comma != NULL) {
+        *comma = ',';
     }
 
     return true;
