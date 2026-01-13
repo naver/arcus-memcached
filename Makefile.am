@@ -36,9 +36,9 @@ endif
 noinst_LTLIBRARIES=libmcd_util.la
 
 
-# Engine configuration file.
-engineconfdir=$(prefix)/conf
-dist_engineconf_DATA=
+# configuration file.
+confdir=$(prefix)/conf
+dist_conf_DATA=
 
 # Test application to test stuff from C
 testapp_SOURCES = testapp.c
@@ -98,6 +98,7 @@ memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@ ${AM_CFLAGS}
 memcached_DEPENDENCIES = libmcd_util.la
 memcached_LDADD = @PROFILER_LDFLAGS@ libmcd_util.la -levent $(APPLICATION_LIBS)
+dist_conf_DATA += arcus.conf
 
 if BUILD_CACHE
 memcached_SOURCES += cache.c
@@ -183,7 +184,7 @@ default_engine_la_SOURCES= \
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
-dist_engineconf_DATA+= engines/default/default_engine.conf
+dist_conf_DATA += engines/default/default_engine.conf
 
 # The demo storage engine
 demo_engine_la_SOURCES= \
