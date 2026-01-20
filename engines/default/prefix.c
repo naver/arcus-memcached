@@ -347,6 +347,10 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
 
         prefix_list[prefix_depth].nprefix = i;
 
+        if (prefix_depth == 0) {
+            *internal = PREFIX_IS_RSVD(key, i);
+        }
+
         prefix_depth++;
         if (prefix_depth >= DEFAULT_PREFIX_MAX_DEPTH) {
             break;
@@ -404,15 +408,10 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                 memcpy(pt + 1, key, prefix_list[j].nprefix);
                 memcpy((char*)pt+sizeof(prefix_t)+prefix_list[j].nprefix, "\0", 1);
                 pt->nprefix = prefix_list[j].nprefix;
+                pt->internal = (uint8_t)*internal;
 #ifdef NESTED_PREFIX
-                if (PREFIX_IS_RSVD(key, prefix_list[0].nprefix)) {
-                    pt->internal = 1; /* internal prefix */
-                }
                 pt->parent_prefix = (j == 0 ? NULL : prefix_list[j-1].pt);
 #else
-                if (PREFIX_IS_RSVD(key, pt->nprefix)) {
-                    pt->internal = 1; /* internal prefix */
-                }
                 pt->parent_prefix = (j == 0 ? null_pt : prefix_list[j-1].pt);
 #endif
                 time(&pt->create_time);
@@ -430,7 +429,6 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     /* update item stats in prefix */
     _prefix_item_count_incr(pt, GET_ITEM_TYPE(it), item_size);
 
-    *internal = (pt->internal ? true : false);
     return ENGINE_SUCCESS;
 }
 
