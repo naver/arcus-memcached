@@ -114,6 +114,11 @@ static inline void *_get_prefix(prefix_t *prefix)
     return (void*)(prefix + 1);
 }
 
+static inline bool _prefix_isempty(prefix_t *pt)
+{
+    return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
+}
+
 static prefix_t *_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
 {
     prefix_t *pt = prefxp->hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
@@ -446,8 +451,8 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
     if (drop_if_empty) {
         while (pt != NULL && pt != null_pt) {
             prefix_t *parent_pt = pt->parent_prefix;
-            if (pt->child_prefix_items > 0 || pt->total_count_exclusive > 0)
-                break; /* NOT empty */
+            if (!_prefix_isempty(pt))
+                break;
             assert(pt->total_bytes_exclusive == 0);
             _prefix_delete(_get_prefix(pt), pt->nprefix,
                            svcore->hash(_get_prefix(pt), pt->nprefix, 0));
@@ -528,7 +533,7 @@ static uint32_t do_count_invalid_prefix(void)
     for (i = 0; i < size; i++) {
         pt = prefxp->hashtable[i];
         while (pt) {
-            if (pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)
+            if (_prefix_isempty(pt))
                 invalid_prefix++;
             pt = pt->h_next;
         }
@@ -712,11 +717,6 @@ char *prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length)
 }
 
 #ifdef SCAN_COMMAND
-static bool _prefix_isempty(prefix_t *pt)
-{
-    return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
-}
-
 static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
 {
     uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
