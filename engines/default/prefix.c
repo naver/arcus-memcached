@@ -150,7 +150,7 @@ static void _prefix_inclusive_stats_init(prefix_t* pt, bool isleaf)
             pt->items_bytes_inclusive[i] = pt->items_bytes_exclusive[i];
         }
         pt->total_count_inclusive = pt->total_count_exclusive;
-        pt->total_bytes_inclusive = pt->total_count_exclusive;
+        pt->total_bytes_inclusive = pt->total_bytes_exclusive;
     }
 }
 #endif
