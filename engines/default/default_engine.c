@@ -1106,6 +1106,164 @@ default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
 }
 #endif
 
+#ifdef JSON_SUPPORT
+/*
+ * JSON Attribute API
+ */
+
+static ENGINE_ERROR_CODE
+default_json_elem_get_type(eitem *e, json_node_type *type)
+{
+    ENGINE_ERROR_CODE ret;
+    json_elem_item *elem = (json_elem_item*)e;
+    if (elem != NULL) {
+        *type = elem->type;
+        ret = ENGINE_SUCCESS;
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_struct_create(ENGINE_HANDLE* handle, const void* cookie,
+                           const void* key, const int nkey, item_attr *attrp,
+                           uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = json_struct_create(key, nkey, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_alloc(ENGINE_HANDLE *handle, const void *cookie,
+                        const void *key, const int nkey,
+                        eitem **e, json_node_type type, json_value *value)
+{
+    json_elem_item *elem;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    elem = json_elem_alloc(get_handle(handle), type, value, cookie);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
+    if (elem != NULL) {
+        *e = elem;
+        ret = ENGINE_SUCCESS;
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    return ret;
+}
+
+static void
+default_json_elem_release(ENGINE_HANDLE* handle, eitem *e, int count)
+{
+    struct default_engine *engine = get_handle(handle);
+    json_elem_release(engine, (json_elem_item**)e, count);
+}
+
+
+static ENGINE_ERROR_CODE
+default_json_elem_append(ENGINE_HANDLE* handle, const void *cookie,
+                         const void *key, const int nkey, eitem **dest, eitem *e,
+                         eitem *e_temp, json_node_type type, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = json_elem_append(engine, (json_elem_item**)dest, (json_elem_item*)e,
+                           (json_elem_item*)e_temp, type, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_set(ENGINE_HANDLE* handle, const void* cookie,
+                      const void* key, const int nkey, const void* path,
+                      const int npath, eitem* eitem, item_attr* attrp,
+                      bool* created, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = json_elem_set(engine, key, nkey, path, npath,
+                        (json_elem_item*)eitem, attrp,
+                        created, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
+                         const void* key, const int nkey,
+                         const void* path, const int npath,
+                         const bool drop_if_empty,
+                         bool* dropped, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = json_elem_delete(engine, key, nkey, path, npath,
+                           drop_if_empty, dropped, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                      const void* key, const int nkey, const void* path,
+                      const int npath, eitem** elem, uint16_t vbucket, void **it_ptr,
+                      eitem** node_array, int* parent_idx_array,int *node_count)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ret = json_elem_get(engine, key, nkey, path, npath,
+                        (json_elem_item**)elem, it_ptr,
+                        (json_elem_item **)node_array, parent_idx_array, node_count);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_render(eitem **nodes, int *parent_idxs,
+                         int node_count, char **buffer, size_t *len)
+{
+    ENGINE_ERROR_CODE ret;
+
+    ret = json_elem_render((json_elem_item**)nodes, parent_idxs, node_count, buffer, len);
+    return ret;
+}
+
+static void
+default_json_elem_scalar(ENGINE_HANDLE *handle, eitem **e, eitem **dest)
+{
+    struct default_engine *engine = get_handle(handle);
+    json_elem_scalar(engine, (json_elem_item**)e, (json_elem_item**)dest);
+}
+
+static ENGINE_ERROR_CODE
+default_json_elem_unlink(ENGINE_HANDLE *handle, eitem **e)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    ret = json_elem_unlink(engine, (json_elem_item**)e);
+    return ret;
+}
+
+#endif
+
 /*
  * Item Attribute API
  */
@@ -1933,6 +2091,35 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
         }
         elem_info->addnl = NULL;
     }
+    else if (type == ITEM_TYPE_JSON) {
+        json_elem_item *elem = (json_elem_item*)eitem;
+        elem_info->nbytes = sizeof(json_elem_item);
+        elem_info->type = elem->type;
+
+        if(elem_info->type==N_NULL){
+            elem_info->value = "NULL";
+            elem_info->nvalue = 4;
+        } else if(elem_info->type==N_STRING){
+            elem_info->value = elem->value.strval.data;
+            elem_info->nvalue = elem->value.strval.len;
+        } else if (elem_info->type==N_INTEGER){
+            elem_info->value = (const char*)&elem->value.intval;
+            elem_info->nvalue = sizeof(int64_t);
+        } else if(elem_info->type == N_NUMBER){
+            elem_info->value = (const char*)&elem->value.numval;
+            elem_info->nvalue = sizeof(double);
+        } else if(elem_info->type == N_BOOLEAN){
+            elem_info->value = (const char*)&elem->value.boolval;
+            elem_info->nvalue = sizeof(int);
+        } else if(elem_info->type==N_ARRAY || elem_info->type==N_DICT){
+            elem_info->value = (const char*)elem;
+                elem_info->nvalue = sizeof(json_elem_item);
+        }
+        else{
+            elem_info->value = (char*)elem + sizeof(json_elem_item);
+            elem_info->nvalue = 0;
+        }
+    }
 }
 
 ENGINE_ERROR_CODE
@@ -2018,6 +2205,20 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .btree_elem_smget_old = default_btree_elem_smget_old,
 #endif
          .btree_elem_smget   = default_btree_elem_smget,
+#endif
+#ifdef JSON_SUPPORT
+         /* JSON Collection API */
+         .json_elem_get_type = default_json_elem_get_type,
+         .json_struct_create = default_json_struct_create,
+         .json_elem_alloc   = default_json_elem_alloc,
+         .json_elem_append  = default_json_elem_append,
+         .json_elem_set     = default_json_elem_set,
+         .json_elem_delete  = default_json_elem_delete,
+         .json_elem_get     = default_json_elem_get,
+         .json_elem_render  = default_json_elem_render,
+         .json_elem_release = default_json_elem_release,
+         .json_elem_scalar  = default_json_elem_scalar,
+         .json_elem_unlink  = default_json_elem_unlink,
 #endif
          /* Attributes API */
          .getattr          = default_getattr,

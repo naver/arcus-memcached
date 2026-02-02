@@ -150,6 +150,15 @@ my $rst;
 ## STAT bop_decr_elem_hits 0
 ## STAT bop_decr_none_hits 0
 ## STAT bop_decr_misses 0
+## STAT jop_create_oks 0
+## STAT jop_set_misses 0
+## STAT jop_set_hits 0
+## STAT jop_delete_misses 0
+## STAT jop_delete_elem_hits 0
+## STAT jop_delete_none_hits 0
+## STAT jop_get_misses 0
+## STAT jop_get_elem_hits 0
+## STAT jop_get_none_hits 0
 ## STAT getattr_misses 0
 ## STAT getattr_hits 0
 ## STAT setattr_misses 0

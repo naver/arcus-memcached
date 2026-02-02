@@ -91,6 +91,10 @@ memcached_SOURCES = \
                     topkeys.h \
                     cmdlog.c \
                     cmdlog.h \
+                    json_parsing.c \
+                    json_parsing.h \
+                    jsonsl/jsonsl.c \
+                    jsonsl/jsonsl.h \
                     lqdetect.c \
                     lqdetect.h \
                     trace.h
@@ -179,6 +183,10 @@ default_engine_la_SOURCES= \
                     engines/default/coll_map.h \
                     engines/default/coll_btree.c \
                     engines/default/coll_btree.h \
+                    engines/default/coll_json.c \
+                    engines/default/coll_json.h \
+                    engines/default/json/jsondata.c \
+                    engines/default/json/jsondata.h \
                     engines/default/slabs.c \
                     engines/default/slabs.h
 default_engine_la_DEPENDENCIES= libmcd_util.la

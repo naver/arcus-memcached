@@ -33,6 +33,10 @@
 #include "mc_util.h"
 #include "engine_loader.h"
 
+#ifdef JSON_SUPPORT
+#include <jsonsl/jsonsl.h>
+#endif
+
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.
@@ -346,6 +350,12 @@ struct conn {
     int          coll_smgmode; /* smget exec mode : 0(oldexec), 1(duplicate), 2(unique) */
 #else
     bool         coll_unique;  /* unique flag (used in smget) */
+#endif
+#ifdef JSON_SUPPORT
+    char        *coll_path;
+    int          coll_npath;
+    int          coll_nelem;
+    jsonsl_t     coll_json_parser;
 #endif
     bkey_range   coll_bkrange; /* bkey range */
     eflag_filter coll_efilter; /* eflag filter */

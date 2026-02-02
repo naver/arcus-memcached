@@ -29,12 +29,18 @@
 #define DEFAULT_MAX_SET_SIZE   50000
 #define DEFAULT_MAX_MAP_SIZE   50000
 #define DEFAULT_MAX_BTREE_SIZE 50000
+#ifdef JSON_SUPPORT
+#define DEFAULT_MAX_JSON_SIZE  50000
+#endif
 
 /* default collection size */
 #define DEFAULT_LIST_SIZE  4000
 #define DEFAULT_SET_SIZE   4000
 #define DEFAULT_MAP_SIZE   4000
 #define DEFAULT_BTREE_SIZE 4000
+#ifdef JSON_SUPPORT
+#define DEFAULT_JSON_SIZE  4000
+#endif
 
 /* max element bytes */
 #define MINIMUM_MAX_ELEMENT_BYTES 1024
@@ -75,6 +81,11 @@ enum upd_type {
     UPD_BT_ELEM_INSERT,
     UPD_BT_ELEM_DELETE,
     UPD_BT_ELEM_DELETE_DROP,
+    /* json command */
+    UPD_JSON_CREATE,
+    UPD_JSON_ELEM_INSERT,
+    UPD_JSON_ELEM_DELETE,
+    UPD_JSON_ELEM_DELETE_DROP,
     /* not command */
     UPD_NONE
 };
@@ -104,6 +115,9 @@ enum elem_delete_cause {
 #define ITEM_IFLAG_SET   2   /* set item */
 #define ITEM_IFLAG_MAP   3   /* map item */
 #define ITEM_IFLAG_BTREE 4   /* b+tree item */
+#ifdef JSON_SUPPORT
+#define ITEM_IFLAG_JSON  5   /* json item */
+#endif
 #define ITEM_IFLAG_COLL  7   /* collection item: list/set/map/b+tree */
 /* 2) item flag: decreasing order */
 #define ITEM_LINKED      32  /* linked to assoc hash table */
@@ -116,6 +130,9 @@ enum elem_delete_cause {
 #define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_SET)
 #define IS_MAP_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_MAP)
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
+#ifdef JSON_SUPPORT
+#define IS_JSON_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_JSON)
+#endif
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
 /* collection meta flag */

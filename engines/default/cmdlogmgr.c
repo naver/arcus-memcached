@@ -22,6 +22,8 @@
 #include <errno.h>
 #include <sys/time.h> /* gettimeofday() */
 
+//#define ENABLE_PERSISTENCE//todo delete
+
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "item_clog.h"
@@ -673,6 +675,26 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
                                                        offset, reqcount, drop);
         cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
     }
+}
+
+void cmdlog_generate_json_elem_set(hash_item *it, json_elem_item *elem)
+{
+    JsonElemSetLog log;
+    lrec_attr_info attr;
+    log_waiter_t *waiter = cmdlog_get_my_waiter();
+    bool create = waiter->elem_insert_with_create;
+    waiter->elem_insert_with_create = false;
+    (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_json_elem_delete(hash_item *it, json_elem_item *elem)
+{
+    JsonElemDelLog log;
+    log_waiter_t *waiter = cmdlog_get_my_waiter();
+    bool drop = waiter->elem_delete_with_drop;
+    (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_operation_range(bool begin)

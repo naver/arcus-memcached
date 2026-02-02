@@ -785,6 +785,21 @@ void threadlocal_stats_clear(struct thread_stats *stats)
     stats->getattr_misses = 0;
     stats->setattr_hits = 0;
     stats->setattr_misses = 0;
+#ifdef JSON_SUPPORT
+    stats->cmd_jop_create = 0;
+    stats->cmd_jop_set = 0;
+    stats->cmd_jop_delete = 0;
+    stats->cmd_jop_get = 0;
+    stats->jop_create_oks = 0;
+    stats->jop_set_hits = 0;
+    stats->jop_set_misses = 0;
+    stats->jop_delete_elem_hits = 0;
+    stats->jop_delete_none_hits = 0;
+    stats->jop_delete_misses = 0;
+    stats->jop_get_elem_hits = 0;
+    stats->jop_get_none_hits = 0;
+    stats->jop_get_misses = 0;
+#endif
 }
 
 void *threadlocal_stats_create(int num_threads)
@@ -959,7 +974,17 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->getattr_misses += thread_stats[ii].getattr_misses;
         stats->setattr_hits += thread_stats[ii].setattr_hits;
         stats->setattr_misses += thread_stats[ii].setattr_misses;
-
+#ifdef JSON_SUPPORT
+        stats->jop_create_oks += thread_stats[ii].jop_create_oks;
+        stats->jop_set_hits += thread_stats[ii].jop_set_hits;
+        stats->jop_set_misses += thread_stats[ii].jop_set_misses;
+        stats->jop_delete_elem_hits += thread_stats[ii].jop_delete_elem_hits;
+        stats->jop_delete_none_hits += thread_stats[ii].jop_delete_none_hits;
+        stats->jop_delete_misses += thread_stats[ii].jop_delete_misses;
+        stats->jop_get_elem_hits += thread_stats[ii].jop_get_elem_hits;
+        stats->jop_get_none_hits += thread_stats[ii].jop_get_none_hits;
+        stats->jop_get_misses += thread_stats[ii].jop_get_misses;
+#endif
         pthread_mutex_unlock(&thread_stats[ii].mutex);
     }
 }

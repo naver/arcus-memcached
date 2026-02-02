@@ -86,6 +86,11 @@
         return; \
     }
 
+#ifdef JSON_SUPPORT
+#include <jsonsl/jsonsl.h>
+#include "json_parsing.h"
+#endif
+
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -609,7 +614,9 @@ static int conn_constructor(void *buffer, void *unused1, int unused2)
                        "Failed to allocate buffers for connection\n");
         return 1;
     }
-
+#ifdef JSON_SUPPORT
+    new_json_parser(c);
+#endif
     LOCK_STATS();
     mc_stats.conn_structs++;
     UNLOCK_STATS();
@@ -882,6 +889,15 @@ static void conn_coll_eitem_free(conn *c)
       case OPERATION_BOP_SMGET:
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
+        break;
+#endif
+#ifdef JSON_SUPPORT
+      case OPERATION_JOP_SET:
+      case OPERATION_JOP_GET:
+        mc_engine.v1->json_elem_release(mc_engine.v0, c->coll_eitem, c->coll_ecount);
+        if (c->coll_resps != NULL) {
+            free(c->coll_resps); c->coll_resps = NULL;
+        }
         break;
 #endif
       default:
@@ -3009,6 +3025,85 @@ static void process_bop_smget_complete(conn *c)
 }
 #endif
 
+#ifdef JSON_SUPPORT
+static void process_jop_set_complete(conn *c)
+{
+    assert(c->coll_op == OPERATION_JOP_SET);
+    assert(c->coll_eitem != NULL);
+    ENGINE_ERROR_CODE ret;
+
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_JSON, c->coll_eitem, &c->einfo);
+
+    c->einfo.nbytes = c->coll_nelem;
+    c->einfo.nvalue=c->coll_nelem-2;
+    c->einfo.value = (char*)c->coll_eitem + sizeof(json_elem_item);
+
+    if (einfo_check_tail_crlf(&c->einfo) != 0) { /* check "\r\n" */
+        out_string(c, "CLIENT_ERROR bad data chunk");
+    } else {
+        bool created;
+
+        //json item create
+        if (c->coll_json_parser == NULL) {
+            new_json_parser(c);// 기존에 정의된 함수 활용
+            out_string(c, "SERVER_ERROR out of memory (JSON parser)");
+            return;
+        }
+        char *err = (char*)malloc(200 * sizeof(char));
+        eitem *elem_item = NULL;
+
+        ret = create_item_from_json(c->einfo.value, c->einfo.nvalue, &elem_item, c, &err);
+
+        if (ret != ENGINE_SUCCESS) {
+            ret = ENGINE_ELEM_ENOENT;
+        } else if (elem_item == NULL) {
+            ret = ENGINE_ENOMEM;
+        }
+        //json_elem_set
+        if (ret == ENGINE_SUCCESS) {
+            ret = mc_engine.v1->json_elem_set(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                              c->coll_path, c->coll_npath, elem_item,
+                                              c->coll_attrp, &created, 0);
+            free(c->coll_eitem);
+            c->coll_eitem = NULL;
+        }
+
+        CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
+        if (settings.detail_enabled) {
+            stats_prefix_record_jop_set(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+        }
+
+        switch (ret) {
+        case ENGINE_SUCCESS:
+            STATS_HITS(c, jop_set, c->coll_key, c->coll_nkey);
+            if (created == false) out_string(c, "STORED");
+            else                  out_string(c, "CREATED_STORED");
+            break;
+        case ENGINE_DISCONNECT:
+            c->state = conn_closing;
+            break;
+        case ENGINE_KEY_ENOENT:
+            STATS_MISSES(c, jop_set, c->coll_key, c->coll_nkey);
+            out_string(c, "NOT_FOUND");
+            break;
+        default:
+            STATS_CMD_NOKEY(c, jop_set);
+            if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+            else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+            else if (ret == ENGINE_ELEM_ENOENT) {
+                if (*err) out_string(c, err);
+                else out_string(c, "JSON PARSING ERROR");
+                free(err);
+            }
+            else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR path parsing error");
+            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
+        }
+    }
+}
+#endif
+
 /**
  * Get a suffix buffer and insert it into the list of used suffix buffers
  * @param c the connection object
@@ -3396,6 +3491,9 @@ static void complete_update_ascii(conn *c)
 #endif
 #ifdef SUPPORT_BOP_SMGET
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
+#endif
+#ifdef JSON_SUPPORT
+        else if (c->coll_op == OPERATION_JOP_SET) process_jop_set_complete(c);
 #endif
         else if (c->coll_op == OPERATION_MGET) process_mget_complete(c, false);
         else if (c->coll_op == OPERATION_MGETS) process_mget_complete(c, true);
@@ -8062,6 +8160,10 @@ static void complete_nread(conn *c)
 #define SOP_KEY_TOKEN 2
 #define MOP_KEY_TOKEN 2
 #define BOP_KEY_TOKEN 2
+#ifdef JSON_SUPPORT
+#define JOP_KEY_TOKEN 2
+#define JOP_PATH_TOKEN 3
+#endif
 
 #define MAX_TOKENS 30
 
@@ -8536,6 +8638,12 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("limit_maxconns", "%d", settings.maxconns);
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%"PRIu64, thread_stats.conn_yields);
+#ifdef JSON_SUPPORT
+    APPEND_STAT("cmd_jop_create", "%"PRIu64, thread_stats.cmd_jop_create);
+    APPEND_STAT("cmd_jop_set", "%"PRIu64, thread_stats.cmd_jop_set);
+    APPEND_STAT("cmd_jop_delete", "%"PRIu64, thread_stats.cmd_jop_delete);
+    APPEND_STAT("cmd_jop_get", "%"PRIu64, thread_stats.cmd_jop_get);
+#endif
     UNLOCK_STATS();
 }
 
@@ -10882,7 +10990,8 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
                                                    int coll_type, item_attr *attrp)
 {
     assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
+           coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE ||
+           coll_type==ITEM_TYPE_JSON);
     int64_t exptime;
 
     /* create attributes: flags, exptime, maxcount, ovflaction, unreadable */
@@ -14051,6 +14160,324 @@ static void process_ready_command(conn *c, token_t *tokens, const size_t ntokens
     out_string(c, response);
 }
 
+#ifdef JSON_SUPPORT
+
+
+static void process_jop_get(conn *c, const char *key, const size_t nkey,
+                             const char *path, const size_t npath,
+                             item_attr *attrp)
+{
+    assert(c->ewouldblock == false);
+
+    eitem  *elem_item = NULL;
+    size_t len = nkey+npath+21; /* response head and tail size */
+    char *respbuf = (char*)malloc((len + 1) * sizeof(char));
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    void *it_ptr=NULL;
+
+    eitem *nodes[1024]; //출력할 엘리먼트 배열
+    int parent_idxs[1024]; //부모배열
+    int count = 0; //출력할 엘리먼트 갯수
+
+    ret = mc_engine.v1->json_elem_get(mc_engine.v0, c, key, nkey, path,
+                                      npath, &elem_item, 0, &it_ptr,
+                                      nodes, parent_idxs, &count);
+
+    if (ret == ENGINE_SUCCESS) {
+        sprintf(respbuf, "VALUE KEY: %s, PATH: %s\r\n", key, path);
+        ret = mc_engine.v1->json_elem_render(nodes, parent_idxs, count, &respbuf, &len);
+    }
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_jop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+    }
+
+    if (ret != ENGINE_SUCCESS && it_ptr != NULL) {
+        mc_engine.v1->release(mc_engine.v0, c, (item*)it_ptr);
+        it_ptr = NULL;
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        if ((add_iov(c, respbuf, len) != 0) ||
+            (IS_UDP(c->transport))) {
+            if (it_ptr) mc_engine.v1->release(mc_engine.v0, c, (item*)it_ptr);
+            ret = ENGINE_ENOMEM; break;
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, jop_get, key, nkey);
+            c->ilist[0] = (item*)it_ptr;
+            c->icurr = c->ilist;
+            c->ileft = 1;
+
+            c->coll_eitem = (void *)nodes;
+            c->coll_ecount = count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_JOP_GET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+        } else { // ENGINE_ENOMEM
+            STATS_CMD_NOKEY(c, jop_get);
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+        }
+        break;
+    case ENGINE_ELEM_ENOENT:
+    case ENGINE_E2BIG:
+    case ENGINE_EBADVALUE:
+        STATS_NONE_HITS(c, jop_get, key, nkey);
+        if (ret == ENGINE_ELEM_ENOENT) out_string(c, "NOT_FOUND_ELEMENT");
+        else if (ret == ENGINE_E2BIG) out_string(c, "TOO BIG");
+        else                          out_string(c, "PATH ERROR");
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    case ENGINE_KEY_ENOENT:
+    case ENGINE_UNREADABLE:
+        STATS_MISSES(c, jop_get, key, nkey);
+        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
+        else                          out_string(c, "UNREADABLE");
+        break;
+    default:
+        STATS_CMD_NOKEY(c, jop_get);
+        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+    }
+}
+
+static void process_jop_prepare_nread(conn *c, int cmd, size_t vlen,
+                                      char *key, size_t nkey,
+                                      char *path, size_t npath)
+{
+    json_elem_item *elem = NULL;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (vlen > settings.max_element_bytes) {
+        ret = ENGINE_E2BIG;
+    } else {
+        size_t total_alloc = sizeof(json_elem_item) + vlen;
+
+        if ((elem = (json_elem_item *)malloc(total_alloc)) == NULL){
+            ret = ENGINE_ENOMEM;
+        } else {
+            memset(elem, 0, total_alloc);
+        }
+    }
+
+    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
+        stats_prefix_record_jop_set(key, nkey, false);
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_JSON, elem, &c->einfo);
+        c->einfo.value = (char*)elem + sizeof(json_elem_item);
+        c->einfo.nbytes = vlen;
+
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+
+        c->ritem = (char*)elem + sizeof(json_elem_item);
+        c->rlbytes = vlen;
+        c->rltotal = 0;
+
+        c->coll_eitem  = (void *)elem;
+        c->coll_ecount = 1;
+        c->coll_op     = OPERATION_JOP_SET;
+        c->coll_path   = path;
+        c->coll_npath  = npath;
+        c->coll_nelem  = vlen;
+        conn_set_state(c, conn_nread);
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
+        STATS_CMD_NOKEY(c, jop_set);
+        if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+
+        // swallow the data line
+        c->write_and_go = conn_swallow;
+        c->sbytes = vlen;
+    }
+}
+
+static void set_jop_path (conn *c, token_t *tokens, size_t ntokens, json_path *path)
+{
+    char *token_value = tokens[JOP_PATH_TOKEN].value;
+
+    /*
+      check whether the last but one token is "path" or not.
+      if so, set path and npath accordingly.
+      or set path to "$" (the root) by default.
+    */
+    if (token_value && (token_value[0] == '$')) {
+        path->value = tokens[JOP_PATH_TOKEN].value;
+        path->vlen = (int32_t)tokens[JOP_PATH_TOKEN].length;
+
+    } else {
+        path->value = "$";
+        path->vlen = 1;
+    }
+}
+
+static void process_jop_delete(conn *c, const char *key, const size_t nkey,
+                                const char *path, const size_t npath)
+{
+    assert(c->ewouldblock == false);
+    bool drop_if_empty = true;
+    bool dropped;
+
+    ENGINE_ERROR_CODE ret;
+    ret = mc_engine.v1->json_elem_delete(mc_engine.v0, c, key, nkey,
+                                         path, npath, drop_if_empty,
+                                         &dropped, 0);
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_jop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        STATS_ELEM_HITS(c, jop_delete, key, nkey);
+        if (dropped == false) out_string(c, "DELETED");
+        else                  out_string(c, "DELETED_DROPPED");
+        break;
+    case ENGINE_ELEM_ENOENT:
+    case ENGINE_EBADVALUE:
+        STATS_NONE_HITS(c, jop_delete, key, nkey);
+        if (ret == ENGINE_ELEM_ENOENT) out_string(c, "NOT_FOUND_ELEMENT");
+        else out_string(c, "PATH PARSE ERROR");
+        break;
+    case ENGINE_KEY_ENOENT:
+        STATS_MISSES(c, jop_delete, key, nkey);
+        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
+        else out_string(c, "SERVER_ERROR out of memory");
+        break;
+    default:
+        STATS_CMD_NOKEY(c, jop_delete);
+        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+    }
+    return;
+}
+
+static void process_jop_create(conn *c, char *key, size_t nkey, item_attr *attrp)
+{
+    assert(c->ewouldblock == false);
+
+    ENGINE_ERROR_CODE ret;
+    ret = mc_engine.v1->json_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
+    CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
+    if (settings.detail_enabled) {
+        stats_prefix_record_jop_create(key, nkey,(ret==ENGINE_SUCCESS));
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        STATS_OKS(c, jop_create, key, nkey);
+        out_string(c, "CREATED");
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
+        STATS_CMD_NOKEY(c, jop_create);
+        if (ret == ENGINE_KEY_EEXISTS) out_string(c, "EXISTS");
+        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__,ret);
+    }
+}
+
+static void process_jop_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    char *key = tokens[JOP_KEY_TOKEN].value;
+    size_t nkey = tokens[JOP_KEY_TOKEN].length;
+
+#ifdef ASCII_SASL
+    if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_BTREE, key, tokens, ntokens)) {
+        out_string(c, "CLIENT_ERROR unauthorized");
+        return;
+    }
+#endif
+
+    if (nkey > KEY_MAX_LENGTH) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+    c->coll_key = key;
+    c->coll_nkey = nkey;
+
+    json_path path;
+    memset(&path, 0, sizeof(json_path));
+
+    if(ntokens>=4 && ntokens<=5 && strcmp(subcommand, "get") == 0){
+
+        set_jop_path(c, tokens, ntokens, &path);
+        process_jop_get(c, key, nkey, path.value, path.vlen, c->coll_attrp);
+
+    } else if(ntokens>=4 && ntokens<=5 && strcmp(subcommand, "delete") == 0) {
+
+        set_jop_path(c, tokens, ntokens, &path);
+        process_jop_delete(c, key, nkey, path.value, path.vlen);
+
+    } else if (ntokens>=6 && ntokens<=7 && strcmp(subcommand, "set") == 0) {
+
+        set_jop_path(c, tokens, ntokens, &path);
+
+        int32_t vlen;
+        //set_pipe_noreply_maybe(c, tokens, ntokens); todo
+
+        if ((! safe_strtol(tokens[JOP_PATH_TOKEN+1].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        vlen += 2;
+
+        if (check_and_handle_pipe_state(c)) {
+            process_jop_prepare_nread(c, (int)OPERATION_JOP_SET, vlen, key, nkey, path.value, path.vlen);
+        } else { /* pipe error */
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
+        }
+
+    } else if ((ntokens >= 7 && ntokens <= 8) && strcmp(subcommand, "create") == 0) {
+        set_noreply_maybe(c, tokens, ntokens);
+
+        int read_ntokens = JOP_KEY_TOKEN+1;
+        int post_ntokens = 1 + (c->noreply ? 1 : 0);
+        int rest_ntokens = ntokens - read_ntokens - post_ntokens;
+
+        if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
+                                             ITEM_TYPE_JSON, &c->coll_attr_space) != 0) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        c->coll_attrp = &c->coll_attr_space;
+        process_jop_create(c, key, nkey, c->coll_attrp);
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "ERROR unknown command");
+    }
+}
+#endif
+
 static void process_command_ascii(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
@@ -14143,6 +14570,8 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
             process_sop_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "lop") == 0) {
             process_lop_command(c, tokens, ntokens);
+        } else if (strcmp(cmd, "jop") == 0) {
+            process_jop_command(c, tokens, ntokens);
         } else {
             unknown_command = true;
         }
@@ -14204,6 +14633,12 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         } else if (strcmp(cmd, "reload") == 0) {
             process_reload_command(c, tokens, ntokens);
         }
+#endif
+#ifdef JSON_SUPPORT
+    else if((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "jop")) == 0)
+    {
+        process_jop_command(c, tokens, ntokens);
+    }
 #endif
 #ifdef SCAN_COMMAND
         else if (strcmp(cmd, "scan") == 0) {
@@ -16755,6 +17190,10 @@ int main (int argc, char **argv)
                 "Failed to create connection cache\n");
         exit(EXIT_FAILURE);
     }
+    /* initialize JSON parser */
+#ifdef JSON_SUPPORT
+    json_parser_init(0, mc_engine.v1);
+#endif
 
 #ifndef __WIN32__
     /*

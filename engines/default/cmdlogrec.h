@@ -17,6 +17,10 @@
  */
 #ifndef CMDLOGREC_H
 #define CMDLOGREC_H
+/*
+#define ENABLE_PERSISTENCE//todo delete
+#include "jsondata.h"
+#include "item_base.h"*/
 
 #ifdef ENABLE_PERSISTENCE
 /*
@@ -85,6 +89,8 @@ enum log_type {
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
     LOG_BT_ELEM_DELETE_LOGICAL,
+    LOG_JSON_ELEM_SET,
+    LOG_JSON_ELEM_DELETE,
     LOG_OPERATION_BEGIN,
     LOG_OPERATION_END,
     LOG_SNAPSHOT_ELEM,
@@ -376,6 +382,41 @@ typedef struct _Btree_elem_delete_logical_log {
     eflag_filter        *efilterp;
 } BtreeElemDelLgcLog;
 
+/* Json Elem Insert Log Record */
+typedef struct _Json_elem_set_data {
+    uint16_t keylen;  /* key length */
+    uint8_t  create;  /* create flag */
+    uint8_t reserved_8[5];
+    uint32_t pathlen; /* path length */
+    uint32_t vallen;  /* value length */
+    char     data[1];
+    char     path[1];
+} JsonElemSetData;
+
+typedef struct _Json_elem_set_log {
+    LogHdr         header;
+    JsonElemSetData body;
+    char           *keyptr;
+    char           *datptr;
+    lrec_attr_info *attrp;
+} JsonElemSetLog;
+
+/* Json Elem Delete Log Record */
+typedef struct _Json_elem_delete_data {
+    uint16_t keylen;  /* key length */
+    uint8_t  drop;    /* drop if empty */
+    uint8_t reserved_8[1];
+    uint32_t  pathlen;  /* path length */
+    char     data[1];
+} JsonElemDelData;
+
+typedef struct _Json_elem_delete_log {
+    LogHdr         header;
+    JsonElemDelData body;
+    char           *keyptr;
+    char           *datptr;
+} JsonElemDelLog;
+
 /* Operation Range Log Record */
 typedef struct _operation_range_log {
     LogHdr header;
@@ -425,6 +466,10 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
                                              const bkey_range *bkrange,
                                              const eflag_filter *efilter,
                                              uint32_t offset, uint32_t reqcount, bool drop);
+int lrec_construct_json_elem_set(LogRec *logrec, hash_item *it, json_elem_item *elem,
+                                   bool create, lrec_attr_info *attr);
+int lrec_construct_json_elem_delete(LogRec *logrec, hash_item *it, json_elem_item *elem,
+                                   bool drop);
 int lrec_construct_operation_range(LogRec *logrec, bool begin);
 
 /* Function to write the given log record to log buffer */

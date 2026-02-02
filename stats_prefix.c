@@ -99,8 +99,17 @@ struct _prefix_stats {
     PREFIX_STATS *parent_stat;
     uint32_t child_prefixes;
 #endif
+#ifdef JSON_SUPPORT
+    uint64_t      num_jop_creates;
+    uint64_t      num_jop_sets;
+    uint64_t      num_jop_deletes;
+    uint64_t      num_jop_gets;
+    uint64_t      num_jop_create_hits;
+    uint64_t      num_jop_set_hits;
+    uint64_t      num_jop_delete_hits;
+    uint64_t      num_jop_get_hits;
 };
-
+#endif
 #ifdef NESTED_PREFIX
 typedef struct {
     PREFIX_STATS    *pfs;
@@ -1131,6 +1140,96 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
 }
 
 /*
+ * JSON stats
+*/
+#ifdef JSON_SUPPORT
+ void stats_prefix_record_jop_create(const char *key, const size_t nkey, const bool is_hit)
+{
+    PREFIX_STATS *pfs;
+
+    LOCK_STATS();
+    pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_jop_creates++;
+        if (is_hit)
+            pfs->num_jop_create_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
+    if (pfs) {
+        pfs->num_jop_creates++;
+    }
+#endif
+    UNLOCK_STATS();
+}
+void stats_prefix_record_jop_set(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    LOCK_STATS();
+    pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_jop_sets++;
+        if (is_hit)
+            pfs->num_jop_set_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
+    if (pfs) {
+        pfs->num_jop_sets++;
+        if (is_hit)
+            pfs->num_jop_set_hits++;
+    }
+#endif
+    UNLOCK_STATS();
+}
+
+void stats_prefix_record_jop_delete(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    LOCK_STATS();
+    pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_jop_deletes++;
+        if (is_hit)
+            pfs->num_jop_delete_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
+    if (pfs) {
+        pfs->num_jop_deletes++;
+        if (is_hit)
+            pfs->num_jop_delete_hits++;
+    }
+#endif
+    UNLOCK_STATS();
+}
+
+void stats_prefix_record_jop_get(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    LOCK_STATS();
+    pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_jop_gets++;
+        if (is_hit)
+            pfs->num_jop_get_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
+    if (pfs) {
+        pfs->num_jop_gets++;
+        if (is_hit)
+            pfs->num_jop_get_hits++;
+    }
+#endif
+    UNLOCK_STATS();
+}
+#endif
+/*
  * ATTR stats
  */
 void stats_prefix_record_getattr(const char *key, const size_t nkey)
@@ -1202,6 +1301,9 @@ static int do_stats_prefix_write_buffer(char *buffer, const size_t buflen,
         pfs->num_bop_positions, pfs->num_bop_position_hits,
         pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
         pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
+        pfs->num_jop_sets, pfs->num_jop_set_hits,
+        pfs->num_jop_deletes, pfs->num_jop_delete_hits,
+        pfs->num_jop_gets, pfs->num_jop_get_hits,
         pfs->num_getattrs, pfs->num_setattrs);
     return ret;
 }

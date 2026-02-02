@@ -51,6 +51,12 @@ void stats_prefix_record_bop_count(const char *key, const size_t nkey, const boo
 void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit);
+#ifdef JSON_SUPPORT
+void stats_prefix_record_jop_create(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_jop_set(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_jop_delete(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_jop_get(const char *key, const size_t nkey, const bool is_hit);
+#endif
 void stats_prefix_record_getattr(const char *key, const size_t nkey);
 void stats_prefix_record_setattr(const char *key, const size_t nkey);
 /*@null@*/

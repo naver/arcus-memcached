@@ -161,6 +161,21 @@ struct thread_stats {
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
+#ifdef JSON_SUPPORT
+    uint64_t          cmd_jop_create;
+    uint64_t          jop_create_oks;
+    uint64_t          cmd_jop_set;
+    uint64_t          jop_set_hits;
+    uint64_t          jop_set_misses;
+    uint64_t          cmd_jop_delete;
+    uint64_t          jop_delete_elem_hits;
+    uint64_t          jop_delete_none_hits;
+    uint64_t          jop_delete_misses;
+    uint64_t          cmd_jop_get;
+    uint64_t          jop_get_elem_hits;
+    uint64_t          jop_get_none_hits;
+    uint64_t          jop_get_misses;
+#endif
 };
 
 /*

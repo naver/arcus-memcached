@@ -32,6 +32,9 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+//ifdef JSON_SUPPORT todo
+#include "engines/default/json/jsondata.h"
+
 #define SCAN_COMMAND
 #define NESTED_PREFIX
 #define PROXY_SUPPORT
@@ -40,6 +43,10 @@ struct iovec {
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
 #define MULTI_NOTIFY_IO_COMPLETE
+//define JSON_SUPPORT
+#ifndef JSON_SUPPORT
+#define JSON_SUPPORT
+#endif
 
 /** Maximum length of a prefix */
 #define PREFIX_MAX_LENGTH 250
@@ -133,7 +140,13 @@ extern "C" {
         OPERATION_MOP_UPDATE,        /**< Map operation with update element semantics */
         OPERATION_MOP_DELETE,        /**< Map operation with delete element semantics */
         OPERATION_MOP_GET,            /**< Map operation with get element semantics */
-
+#ifdef JSON_SUPPORT
+        /* json operation */
+        OPERATION_JOP_CREATE = 0x90,
+        OPERATION_JOP_SET,
+        OPERATION_JOP_GET,
+        OPERATION_JOP_DELETE,
+#endif
         /* b+tree operation */
         OPERATION_BOP_CREATE = 0x80, /**< B+tree operation with create structure semantics */
         OPERATION_BOP_INSERT,        /**< B+tree operation with insert element semantics */
@@ -158,6 +171,9 @@ extern "C" {
         ITEM_TYPE_SET,
         ITEM_TYPE_MAP,
         ITEM_TYPE_BTREE,
+#ifdef JSON_SUPPORT
+        ITEM_TYPE_JSON,
+#endif
         ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
 
@@ -261,6 +277,7 @@ extern "C" {
         value_item **addnl; /* additional value items */
         const unsigned char *score; /* score data */
         const unsigned char *eflag; /* eflag data */
+        json_node_type type; /*json type*/
     } eitem_info;
 
     /* element info that is trimmed by maxcount overflow */
@@ -401,6 +418,14 @@ extern "C" {
         uint8_t  readable;
         uint8_t  trimmed;
     } item_attr;
+
+    /*JSON path*/
+#ifdef JSON_SUPPORT
+    typedef struct {
+        char* value;
+        uint16_t vlen;
+    } json_path;
+#endif
 
     /* Command authorization flags (bitmask) */
 #define AUTHZ_NONE   0x0000

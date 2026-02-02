@@ -1933,7 +1933,9 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
     item_set_coll_init(engine);
     item_map_coll_init(engine);
     item_btree_coll_init(engine);
-
+#ifdef JSON_SUPPORT
+    item_json_coll_init(engine);
+#endif
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
     return ENGINE_SUCCESS;
 }
@@ -1976,6 +1978,9 @@ void item_final(struct default_engine *engine_ptr)
     item_set_coll_final(engine);
     item_map_coll_final(engine);
     item_btree_coll_final(engine);
+    #ifdef JSON_SUPPORT
+    item_json_coll_final(engine);
+    #endif
     item_clog_final(engine);
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }

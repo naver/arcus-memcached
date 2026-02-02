@@ -60,6 +60,13 @@
 /* A list of attribute operations */
 #define TK_AOPS(C)  C(getattr_hits) C(getattr_misses) C(setattr_hits) C(setattr_misses)
 
+/* A list of json operations */
+#ifdef JSON_SUPPORT
+#define TK_JOPS(C) C(jop_create_oks) C(jop_set_hits) C(jop_set_misses) \
+                    C(jop_delete_elem_hits) C(jop_delete_none_hits) C(jop_delete_misses) \
+                    C(jop_get_elem_hits) C(jop_get_none_hits) C(jop_get_misses)
+#endif
+
 #define TK_MAX_VAL_LEN 250
 
 /* Update the correct stat for a given operation */
@@ -91,6 +98,9 @@ typedef struct topkey_item {
     TK_MOPS(TK_CUR)
     TK_BOPS(TK_CUR)
     TK_AOPS(TK_CUR)
+#ifdef JSON_SUPPORT
+    TK_JOPS(TK_CUR)
+#endif
 #undef TK_CUR
     char key[]; /* A variable length array in the struct itself */
 } topkey_item_t;

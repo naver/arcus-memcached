@@ -23,6 +23,10 @@
 #include "coll_set.h"
 #include "coll_map.h"
 #include "coll_btree.h"
+#ifdef JSON_SUPPORT
+#include "json/jsondata.h"
+#include "coll_json.h"
+#endif
 
 /*
  * You should not try to aquire any of the item locks before calling these

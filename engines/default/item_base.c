@@ -135,6 +135,7 @@ static inline size_t ITEM_ntotal(const hash_item *item)
         if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
         else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
         else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else if (IS_JSON_ITEM(item)) ntotal += sizeof(json_meta_info);
         else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
         ntotal += (item->nkey + item->nbytes);
