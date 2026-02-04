@@ -1,3 +1,31 @@
+# 2026-02-04 [version 1.16.0]
+## 🐣 New Features
+  - Add `sasl reload` command for arcus_auxprop.
+  - Add `config require_sasl` command.
+  - Support configuration file as command-line argument.
+  - Add `gat` command.
+## 🔧 Enhancements
+  - Improve SASL authentication compatibility and error handling.
+  - Add `PREFIX_MAX_LENGTH` validation check when update item.
+  - Enhance 'stats' command with new server/engine metrics.
+## ⚙️ Internal Changes
+  - Refactored long query detection module.
+  - Merge `no matching command` into `unknown command`.
+  - Add hard limit(100) to max_stats_prefixes.
+  - Respond `unknown command` for unknown subcommands
+    instead of `bad command line format`.
+  - Improved the token processing of each command.
+  - Add get_shard_key for hash_ketama.
+  - Refactor to use empty prefix detection.
+  - Bundle nested fields of `prefix_t` with `NESTED_PREFIX`.
+## 📝 Documentation
+  - Add SASL doumentation.
+  - Add `*` for multiple key input.
+  - Adjusted document titles.
+  - Use HTML anchors for stable links.
+## ✅ Testing
+  - Unify new_memcached logic with engine-specific setup.
+
 # 2025-09-22 [version 1.15.0]
 ## 🐣 New Features
   - Add `ARCUS_CACHE_HOSTNAME_OVERWRITE` environment variable.
