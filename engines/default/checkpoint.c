@@ -432,8 +432,8 @@ int chkpt_recovery_redo(void)
         if (cmdlog_file_apply() < 0) {
             return -1;
         }
-         end = time(NULL);
-         chkpt_last_stat.recovery_elapsed_time_sec = end - start;
+        end = time(NULL);
+        chkpt_last_stat.recovery_elapsed_time_sec = end - start;
     } else {
         /* create empty checkpoint snapshot and create/open cmdlog file. */
         logger->log(EXTENSION_LOG_INFO, NULL,
