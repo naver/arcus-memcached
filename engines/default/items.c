@@ -1549,6 +1549,9 @@ static enum dump_mode do_item_dump_mode_check(const char *modestr)
     if (memcmp(modestr, "key", 3) == 0) {
         mode = DUMP_MODE_KEY;
     }
+    else if (memcmp(modestr, "snapshot", 8) == 0) {
+        mode = DUMP_MODE_SNAPSHOT;
+    }
     return mode;
 }
 
@@ -1591,8 +1594,17 @@ ENGINE_ERROR_CODE item_dump_start(struct default_engine *engine,
 
 #ifdef ENABLE_PERSISTENCE
         if (mode == DUMP_MODE_SNAPSHOT) {
+            struct stat st;
+            stat(filepath, &st);
+            if (!S_ISDIR(st.st_mode)) {
+                logger->log(EXTENSION_LOG_INFO, NULL,
+                        "Chkpt path is not a directory. path=%s err=%s\n",
+                        filepath, strerror(errno));
+                ret = ENGINE_FAILED; break;
+            }
             dumper->running = true;
-            ret = chkpt_snapshot_start(CHKPT_SNAPSHOT_MODE_DATA, prefix, nprefix,
+
+            ret = chkpt_snapshot_start(CHKPT_SNAPSHOT_MODE_CHKPT, prefix, nprefix,
                                        filepath, item_dumper_done);
             if (ret != ENGINE_SUCCESS) {
                 dumper->running = false;

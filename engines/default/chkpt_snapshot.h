@@ -35,6 +35,7 @@ ENGINE_ERROR_CODE chkpt_snapshot_direct(enum chkpt_snapshot_mode mode,
                                         const char *prefix, const int nprefix,
                                         const char *filepath, size_t *filesize);
 
+ENGINE_ERROR_CODE chkpt_snapshot_init_for_cdc(void);
 ENGINE_ERROR_CODE chkpt_snapshot_start(enum chkpt_snapshot_mode mode,
                                        const char *prefix, const int nprefix,
                                        const char *filepath,

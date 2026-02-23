@@ -19,11 +19,14 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <dirent.h>
 #include <assert.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
+#include "produce.h"
+#include "cdclogfile.h"
 
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 16
@@ -456,18 +459,114 @@ static ENGINE_ERROR_CODE do_snapshot_direct(snapshot_st *ss,
     return ret;
 }
 
+static int do_chkpt_create_files(snapshot_st *ss, char *dir_path, int64_t newtime)
+{
+    int fd;
+    char snapshot_path[MAX_FILEPATH_LENGTH];
+    if (snprintf(snapshot_path, MAX_FILEPATH_LENGTH, "%s/snapshot_%"PRId64, dir_path, newtime) >= MAX_FILEPATH_LENGTH) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create snapshot file path. dir=%s\n", dir_path);
+        return -1;
+    }
+
+    fd = open(snapshot_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (fd < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create snapshot file. path: %s, error: %s\n",
+                    snapshot_path, strerror(errno));
+        return -1;
+    }
+    close(fd);
+    sprintf(ss->file.path, "%s", snapshot_path);
+
+    return 0;
+}
+
+static int cdclogfilter(const struct dirent *ent)
+{
+    return (strncmp(ent->d_name, ".", 1) != 0 && strncmp(ent->d_name, "..", 2) != 0);
+}
+
+static int do_chkpt_clear_files(char *dir_path, int64_t newtime)
+{
+    char time[15];
+    int ret = 0;
+    snprintf(time, 15, "%"PRId64, newtime);
+
+    struct dirent **entry_list;
+    int entry_cnt = scandir(dir_path, &entry_list, cdclogfilter, alphasort);
+    if (entry_cnt < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to scan cdclog directory. path: %s, error: %s\n",
+                    dir_path, strerror(errno));
+        return -1;
+    }
+
+    struct dirent *ent;
+    int idx = 0;
+    while (idx < entry_cnt) {
+        ent = entry_list[idx];
+
+        if (strstr(ent->d_name, time) == NULL) {
+            char path[MAX_FILEPATH_LENGTH];
+            if (snprintf(path, MAX_FILEPATH_LENGTH, "%s/%s", dir_path, ent->d_name) <= MAX_FILEPATH_LENGTH)
+                unlink(path);
+        }
+        idx++;
+    }
+
+    for (int i = 0; i < entry_cnt; i++) {
+        free(entry_list[i]);
+    }
+    free(entry_list);
+
+    return ret;
+}
+
 static void *do_snapshot_thread_main(void *arg)
 {
     snapshot_st *ss = (snapshot_st *)arg;
     assert(ss->running == true);
 
+    int64_t newtime = getnowdatetime_int();
+    char dir_path[MAX_FILEPATH_LENGTH];
+    if (snprintf(dir_path, MAX_FILEPATH_LENGTH, "%s", ss->file.path) >= MAX_FILEPATH_LENGTH) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create snapshot dir path. path=%s\n", ss->file.path);
+        return NULL;
+    }
+
+    if (do_chkpt_create_files(ss, dir_path, newtime) < 0) {
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Failed to create snapshot file.");
+        return NULL;
+    }
+
+    char cdclog_path[MAX_FILEPATH_LENGTH];
+    if (snprintf(cdclog_path, MAX_FILEPATH_LENGTH,
+                 "%s/cdclog_%"PRId64"_%06d", dir_path, newtime, 1) >= MAX_FILEPATH_LENGTH) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create cdc log path. dir=%s\n", dir_path);
+        return NULL;
+    }
+
+    if (cdclog_file_open(cdclog_path) < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to open cdc log path. dir=%s\n", dir_path);
+        return NULL;
+    }
+
     if (do_snapshot_action(ss) == true) {
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "The snapshot thread has done the snapshot action.\n");
+        set_snapshot_path(ss->file.path);
+        set_cmdlog_path(cdclog_path);
     } else {
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "The snapshot thread has failed to do snapshot action.\n");
     }
+
+    do_chkpt_clear_files(dir_path, newtime);
 
     pthread_mutex_lock(&ss->lock);
     ss->running = false;
@@ -653,6 +752,15 @@ ENGINE_ERROR_CODE chkpt_snapshot_direct(enum chkpt_snapshot_mode mode,
         *filesize = snapshot_anch.file.size;
     }
     pthread_mutex_unlock(&snapshot_anch.lock);
+    return ret;
+}
+
+ENGINE_ERROR_CODE chkpt_snapshot_init_for_cdc()
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    /* mkdir "default_dirpath" */
+    ret = chkpt_snapshot_start(CHKPT_SNAPSHOT_MODE_CHKPT, NULL, -1,
+                               "/home/intern/minuk/cdc-test" /* default_dirpath */, NULL);
     return ret;
 }
 

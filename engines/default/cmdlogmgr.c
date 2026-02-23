@@ -28,6 +28,8 @@
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
 #include "cmdlogfile.h"
+#include "cdclogfile.h"
+#include "produce.h"
 
 static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 
@@ -472,6 +474,16 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    (void)cdclog_file_init(engine);
+    ret = ms_prod_init(engine);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+    ret = chkpt_snapshot_init_for_cdc();
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+
     /* set enable change log */
     (void)item_clog_set_enable(true);
 
@@ -487,6 +499,10 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    ret = producer_thread_start();
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
 
     logmgr_gl.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "COMMAND LOG MANAGER module initialized.\n");
@@ -498,13 +514,16 @@ void cmdlog_mgr_final(void)
     chkpt_thread_stop();
     cmdlog_buf_flush_thread_stop();
     do_cmdlog_gcommit_thread_stop();
+    producer_thread_stop();
 
     /* CONSIDER: do last checkpoint before shutdown engine. */
     chkpt_snapshot_final();
     chkpt_final();
     cmdlog_buf_final();
     cmdlog_file_final();
+    cdclog_file_final();
     cmdlog_waiter_final();
+    producer_final();
 
     if (logmgr_gl.initialized == true) {
         logmgr_gl.initialized = false;

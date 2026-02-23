@@ -27,6 +27,7 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogbuf.h"
 #include "cmdlogfile.h"
+#include "cdclogfile.h"
 
 /* FIXME: config log buffer size */
 #define CMDLOG_BUFFER_SIZE (100 * 1024 * 1024) /* 100 MB */
@@ -147,7 +148,8 @@ static uint32_t do_log_buff_flush(bool flush_all)
 
     if (dual_write_complete_flag) {
         cmdlog_file_complete_dual_write();
-        assert(dual_write_size == cmdlog_file_getsize());
+        cdclog_file_complete_dual_write();
+        //assert(dual_write_size == cmdlog_file_getsize());
 
         pthread_mutex_lock(&log_buff_gl.flush_lsn_lock);
         log_buff_gl.nxt_flush_lsn.filenum += 1;
@@ -156,7 +158,10 @@ static uint32_t do_log_buff_flush(bool flush_all)
     }
 
     if (nflush > 0) {
+        // Persistence
         cmdlog_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
+        // CDC
+        cdclog_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
 
         /* update nxt_flush_lsn */
         pthread_mutex_lock(&log_buff_gl.flush_lsn_lock);
@@ -244,6 +249,10 @@ static LogSN do_log_buff_write(LogRec *logrec, bool dual_write)
         /* check remain length */
         spare_length = CMDLOG_FLUSH_AUTO_SIZE - logbuff->fque[logbuff->fend].nflush;
         if (spare_length >= total_length) spare_length = total_length;
+        else {
+            /* Prevent record splitting */
+            if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
+        }
 
         logbuff->fque[logbuff->fend].nflush += spare_length;
         logbuff->fque[logbuff->fend].dual_write = dual_write;

@@ -10008,7 +10008,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
 
     /* dump ascii command
      * dump start <mode> [<prefix>] <filepath>\r\n
-     *   <mode> : key
+     *   <mode> : key, snapshot
      * dump stop\r\n
      */
     if (memcmp(subcommand, "start", 5) == 0) {
@@ -10017,7 +10017,8 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
         modestr = tokens[2].value;
         if (ntokens == 5) {
             filepath = tokens[3].value;
-        } else {
+        }
+        else if (memcmp(modestr, "key", 3) == 0) {
             prefix = tokens[3].value;
             nprefix = tokens[3].length;
             if (nprefix > PREFIX_MAX_LENGTH) {
@@ -10030,6 +10031,10 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
                 nprefix = 0;
             }
             filepath = tokens[4].value;
+        } else {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "ERROR unknown command");
+            return;
         }
     }
     else if (memcmp(subcommand, "stop", 4) == 0) {
