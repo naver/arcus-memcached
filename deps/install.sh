@@ -5,7 +5,7 @@ trap "stop_build_and_install" ERR
 
 deps_path=$(dirname $0)
 libevent="libevent-2.1.12-stable"
-zookeeper="arcus-zookeeper-3.5.9-p3"
+zookeeper="arcus-zookeeper-3.5.9-p4"
 cyrussasl="cyrus-sasl-2.1.28"
 
 ## Error handling
