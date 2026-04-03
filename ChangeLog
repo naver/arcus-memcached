@@ -1,3 +1,7 @@
+# 2026-04-06 [version 1.16.1]
+## ⬆️ Dependency Upgrades
+  - Update arcus-zookeeper client from `3.5.9-p3` to `3.5.9-p4`
+
 # 2026-02-04 [version 1.16.0]
 ## 🐣 New Features
   - Add `sasl reload` command for arcus_auxprop.
