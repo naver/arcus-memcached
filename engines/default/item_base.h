@@ -199,7 +199,7 @@ typedef struct _map_elem_item {
 typedef struct _btree_elem_item_fixed {
     uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
-    uint8_t  status;             /* 3(used), 2(insert mark), 1(delete_mark), or 0(free) */
+    uint8_t  status;             /* element lifecycle state: used(in-tree), unlinked(removed but referenced), or free */
     uint8_t  nbkey;              /* length of bkey */
     uint8_t  neflag;             /* length of element flag */
     uint16_t nbytes;             /**< The total size of the data (in bytes) */
@@ -208,7 +208,7 @@ typedef struct _btree_elem_item_fixed {
 typedef struct _btree_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
-    uint8_t  status;             /* 3(used), 2(insert mark), 1(delete_mark), or 0(free) */
+    uint8_t  status;             /* element lifecycle state: used(in-tree), unlinked(removed but referenced), or free */
     uint8_t  nbkey;              /* length of bkey */
     uint8_t  neflag;             /* length of element flag */
     uint16_t nbytes;             /**< The total size of the data (in bytes) */
