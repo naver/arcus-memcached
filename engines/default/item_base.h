@@ -144,6 +144,10 @@ enum elem_delete_cause {
 /* special address for representing unlinked status */
 #define ADDR_MEANS_UNLINKED  1
 
+/* collection element lifecycle status */
+#define ELEM_STATUS_LINKED   1
+#define ELEM_STATUS_UNLINKED 0
+
 /* hash item strtucture */
 typedef struct _hash_item {
     uint16_t refcount;  /* reference count */
@@ -167,7 +171,7 @@ typedef struct _hash_item {
 typedef struct _list_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint32_t dummy;
+    uint8_t  status;              /* element lifecycle state: linked(in-list) or unlinked(removed but referenced) */
     struct _list_elem_item *next; /* next chain in double linked list */
     struct _list_elem_item *prev; /* prev chain in double linked list */
     uint32_t nbytes;              /**< The total size of the data (in bytes) */
@@ -178,6 +182,7 @@ typedef struct _list_elem_item {
 typedef struct _set_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
+    uint8_t  status;              /* element lifecycle state: linked(in-set) or unlinked(removed but referenced) */
     uint32_t hval;                /* hash value */
     struct _set_elem_item *next;  /* hash chain next */
     uint32_t nbytes;              /**< The total size of the data (in bytes) */
@@ -188,6 +193,7 @@ typedef struct _set_elem_item {
 typedef struct _map_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
+    uint8_t  status;              /* element lifecycle state: linked(in-map) or unlinked(removed but referenced) */
     uint32_t hval;                /* hash value */
     struct _map_elem_item *next;  /* hash chain next */
     uint8_t nfield;               /**< The total size of the field (in bytes) */
@@ -199,7 +205,7 @@ typedef struct _map_elem_item {
 typedef struct _btree_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
-    uint8_t  status;             /* element lifecycle state: used(in-tree), unlinked(removed but referenced), or free */
+    uint8_t  status;             /* element lifecycle state: linked(in-tree) or unlinked(removed but referenced) */
     uint8_t  nbkey;              /* length of bkey */
     uint8_t  neflag;             /* length of element flag */
     uint16_t nbytes;             /**< The total size of the data (in bytes) */

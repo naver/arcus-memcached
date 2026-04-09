@@ -177,7 +177,7 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
         elem->refcount    = 0;
         elem->nfield      = (uint8_t)nfield;
         elem->nbytes      = (uint16_t)nbytes;
-        elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
+        elem->status = ELEM_STATUS_UNLINKED; /* unlinked state */
     }
     return elem;
 }
@@ -195,7 +195,7 @@ static void do_map_elem_release(map_elem_item *elem)
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->next == (map_elem_item *)ADDR_MEANS_UNLINKED) {
+    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
         do_map_elem_free(elem);
     }
 }
@@ -313,8 +313,9 @@ static void do_map_elem_replace(map_meta_info *info,
     } else {
         pinfo->node->htab[pinfo->hidx] = new_elem;
     }
+    new_elem->status = ELEM_STATUS_LINKED;
 
-    old_elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
+    old_elem->status = ELEM_STATUS_UNLINKED;
     if (old_elem->refcount == 0) {
         do_map_elem_free(old_elem);
     }
@@ -413,6 +414,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->cur_elem_cnt += 1;
+    elem->status = ELEM_STATUS_LINKED;
 
     info->ccnt++;
 
@@ -431,7 +433,7 @@ static void do_map_elem_unlink(map_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
+    elem->status = ELEM_STATUS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->cur_elem_cnt -= 1;
     info->ccnt--;
@@ -748,7 +750,7 @@ map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes, const voi
 void map_elem_free(map_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->next == (map_elem_item *)ADDR_MEANS_UNLINKED);
+    assert(elem->status == ELEM_STATUS_UNLINKED);
     do_map_elem_free(elem);
     UNLOCK_CACHE();
 }

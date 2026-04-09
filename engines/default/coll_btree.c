@@ -62,11 +62,6 @@ static inline void UNLOCK_CACHE(void)
 #define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
 #define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
 
-/* btree item status */
-#define BTREE_ITEM_STATUS_USED   2
-#define BTREE_ITEM_STATUS_UNLINK 1
-#define BTREE_ITEM_STATUS_FREE   0
-
 /* overflow type */
 #define OVFL_TYPE_NONE  0
 #define OVFL_TYPE_COUNT 1
@@ -289,7 +284,7 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
         assert(elem->slabs_clsid > 0);
 
         elem->refcount    = 0;
-        elem->status      = BTREE_ITEM_STATUS_UNLINK; /* unlinked state */
+        elem->status      = ELEM_STATUS_UNLINKED; /* unlinked state */
         elem->nbkey       = (uint8_t)nbkey;
         elem->neflag      = (uint8_t)neflag;
         elem->nbytes      = (uint16_t)nbytes;
@@ -307,12 +302,10 @@ static void do_btree_elem_free(btree_elem_item *elem)
 
 static void do_btree_elem_release(btree_elem_item *elem)
 {
-    /* assert(elem->status != BTREE_ITEM_STATUS_FREE); */
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->status == BTREE_ITEM_STATUS_UNLINK) {
-        elem->status = BTREE_ITEM_STATUS_FREE;
+    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
         do_btree_elem_free(elem);
     }
 }
@@ -1667,9 +1660,8 @@ static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
 
     if (elem->refcount > 0) {
-        elem->status = BTREE_ITEM_STATUS_UNLINK;
+        elem->status = ELEM_STATUS_UNLINKED;
     } else  {
-        elem->status = BTREE_ITEM_STATUS_FREE;
         do_btree_elem_free(elem);
     }
 
@@ -1704,13 +1696,12 @@ static void do_btree_elem_replace(btree_meta_info *info,
     CLOG_BTREE_ELEM_INSERT(info, old_elem, new_elem);
 
     if (old_elem->refcount > 0) {
-        old_elem->status = BTREE_ITEM_STATUS_UNLINK;
+        old_elem->status = ELEM_STATUS_UNLINKED;
     } else  {
-        old_elem->status = BTREE_ITEM_STATUS_FREE;
         do_btree_elem_free(old_elem);
     }
 
-    new_elem->status = BTREE_ITEM_STATUS_USED;
+    new_elem->status = ELEM_STATUS_LINKED;
     posi->node->item[posi->indx] = new_elem;
 
     if (new_stotal != old_stotal) { /* apply memory space */
@@ -1851,9 +1842,8 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
             for (i = 0; i < node->used_count; i++) {
                 elem = (btree_elem_item *)node->item[i];
                 if (elem->refcount > 0) {
-                    elem->status = BTREE_ITEM_STATUS_UNLINK;
+                    elem->status = ELEM_STATUS_UNLINKED;
                 } else {
-                    elem->status = BTREE_ITEM_STATUS_FREE;
                     do_btree_elem_free(elem);
                 }
             }
@@ -1946,9 +1936,8 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 
                     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
                     if (elem->refcount > 0) {
-                        elem->status = BTREE_ITEM_STATUS_UNLINK;
+                        elem->status = ELEM_STATUS_UNLINKED;
                     } else {
-                        elem->status = BTREE_ITEM_STATUS_FREE;
                         do_btree_elem_free(elem);
                     }
                     c_posi.node->item[c_posi.indx] = NULL;
@@ -2245,7 +2234,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
         CLOG_BTREE_ELEM_INSERT(info, NULL, elem);
 
         /* insert the element into the leaf page */
-        elem->status = BTREE_ITEM_STATUS_USED;
+        elem->status = ELEM_STATUS_LINKED;
         if (path[0].indx < path[0].node->used_count) {
             for (int i = (path[0].node->used_count-1); i >= path[0].indx; i--) {
                 path[0].node->item[i+1] = path[0].node->item[i];
@@ -2395,7 +2384,7 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                     elem_array[tot_found+cur_found] = elem;
                     if (delete) {
                         tot_space += slabs_space_size(do_btree_elem_ntotal(elem));
-                        elem->status = BTREE_ITEM_STATUS_UNLINK;
+                        elem->status = ELEM_STATUS_UNLINKED;
                         c_posi.node->item[c_posi.indx] = NULL;
                         CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
                     }
@@ -3692,8 +3681,7 @@ btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, c
 void btree_elem_free(btree_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->status == BTREE_ITEM_STATUS_UNLINK);
-    elem->status = BTREE_ITEM_STATUS_FREE;
+    assert(elem->status == ELEM_STATUS_UNLINKED);
     do_btree_elem_free(elem);
     UNLOCK_CACHE();
 }
