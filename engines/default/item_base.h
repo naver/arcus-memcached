@@ -171,7 +171,7 @@ typedef struct _list_elem_item {
     struct _list_elem_item *next; /* next chain in double linked list */
     struct _list_elem_item *prev; /* prev chain in double linked list */
     uint32_t nbytes;              /**< The total size of the data (in bytes) */
-    char     value[1];            /**< the data itself */
+    char     value[];             /**< the data itself */
 } list_elem_item;
 
 /* set element */
@@ -181,7 +181,7 @@ typedef struct _set_elem_item {
     uint32_t hval;                /* hash value */
     struct _set_elem_item *next;  /* hash chain next */
     uint32_t nbytes;              /**< The total size of the data (in bytes) */
-    char     value[1];            /**< the data itself */
+    char     value[];             /**< the data itself */
 } set_elem_item;
 
 /* map element */
@@ -192,19 +192,10 @@ typedef struct _map_elem_item {
     struct _map_elem_item *next;  /* hash chain next */
     uint8_t nfield;               /**< The total size of the field (in bytes) */
     uint16_t nbytes;              /**< The total size of the data (in bytes) */
-    unsigned char data[1];        /* data: <field, value> */
+    unsigned char data[];         /* data: <field, value> */
 } map_elem_item;
 
 /* btree element */
-typedef struct _btree_elem_item_fixed {
-    uint16_t refcount;
-    uint8_t  slabs_clsid;        /* which slab class we're in */
-    uint8_t  status;             /* element lifecycle state: used(in-tree), unlinked(removed but referenced), or free */
-    uint8_t  nbkey;              /* length of bkey */
-    uint8_t  neflag;             /* length of element flag */
-    uint16_t nbytes;             /**< The total size of the data (in bytes) */
-} btree_elem_item_fixed;
-
 typedef struct _btree_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
@@ -212,7 +203,7 @@ typedef struct _btree_elem_item {
     uint8_t  nbkey;              /* length of bkey */
     uint8_t  neflag;             /* length of element flag */
     uint16_t nbytes;             /**< The total size of the data (in bytes) */
-    unsigned char data[1];       /* data: <bkey, [eflag,] value> */
+    unsigned char data[];        /* data: <bkey, [eflag,] value> */
 } btree_elem_item;
 
 /* list meta info */

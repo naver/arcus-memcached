@@ -179,7 +179,7 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
 
 static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 {
-    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
+    return sizeof(btree_elem_item) + BTREE_REAL_NBKEY(elem->nbkey)
            + elem->neflag + elem->nbytes;
 }
 
@@ -281,7 +281,7 @@ static void do_btree_node_free(btree_indx_node *node)
 static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
                                             const uint32_t nbytes, const void *cookie)
 {
-    size_t ntotal = sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
+    size_t ntotal = sizeof(btree_elem_item) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
     btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {

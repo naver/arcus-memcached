@@ -137,7 +137,7 @@ typedef struct _IT_link_data {
         uint64_t cas;
         struct lrec_coll_meta meta;
     } ptr;
-    char data[1];
+    char data[];
 } ITLinkData;
 
 typedef struct _IT_link_log {
@@ -150,7 +150,7 @@ typedef struct _IT_link_log {
 /* Item Unlink Log Record */
 typedef struct _IT_unlink_data {
     uint16_t keylen;         /* key length */
-    char     data[1];
+    char     data[];
 } ITUnlinkData;
 
 typedef struct _IT_unlink_log {
@@ -162,7 +162,7 @@ typedef struct _IT_unlink_log {
 /* Item Flush Log Record */
 typedef struct _IT_flush_data {
     uint8_t nprefix;        /* prefix length */
-    char    data[1];
+    char    data[];
 } ITFlushData;
 
 typedef struct _IT_flush_log {
@@ -181,7 +181,7 @@ typedef struct _IT_setattr_data {
     uint8_t  maxbkrlen;      /* maxbkeyrange length */
     uint8_t  reserved_8[1];
     int32_t  mcnt;           /* maximum element count */
-    char     data[1];
+    char     data[];
 } ITSetAttrData;
 
 typedef struct _IT_setattr_log {
@@ -196,7 +196,7 @@ typedef struct _snapshot_elem_data {
     uint32_t nbytes;
     uint8_t  nekey;          /* nbkey(btree), nfield(map) */
     uint8_t  neflag;         /* neflag(btree) */
-    char     data[1];
+    char     data[];
 } SnapshotElemData;
 
 typedef struct _snapshot_elem_log {
@@ -223,7 +223,7 @@ typedef struct _List_elem_insert_data {
     uint32_t vallen;  /* value length */
     uint32_t totcnt;  /* total element count */
     int32_t  eindex;  /* element index */
-    char     data[1];
+    char     data[];
 } ListElemInsData;
 
 typedef struct _List_elem_insert_log {
@@ -242,7 +242,7 @@ typedef struct _List_elem_delete_data {
     uint32_t totcnt;  /* total element count */
     int32_t  eindex;  /* element index */
     uint32_t delcnt;  /* delete count */
-    char     data[1];
+    char     data[];
 } ListElemDelData;
 
 typedef struct _List_elem_delete_log {
@@ -257,7 +257,7 @@ typedef struct _Map_elem_insert_data {
     uint8_t  create;  /* create flag */
     uint8_t  fldlen;  /* field length */
     uint32_t vallen;  /* value length */
-    char     data[1];
+    char     data[];
 } MapElemInsData;
 
 typedef struct _Map_elem_insert_log {
@@ -273,7 +273,7 @@ typedef struct _Map_elem_delete_data {
     uint16_t keylen;  /* key length */
     uint8_t  drop;    /* drop if empty */
     uint8_t  fldlen;  /* field length */
-    char     data[1];
+    char     data[];
 } MapElemDelData;
 
 typedef struct _Map_elem_delete_log {
@@ -289,7 +289,7 @@ typedef struct _Set_elem_insert_data {
     uint8_t  create;  /* create flag */
     uint8_t  reserved_8[1];
     uint32_t vallen;  /* value length */
-    char     data[1];
+    char     data[];
 } SetElemInsData;
 
 typedef struct _Set_elem_insert_log {
@@ -306,7 +306,7 @@ typedef struct _Set_elem_delete_data {
     uint8_t  drop;    /* drop if empty */
     uint8_t  reserved_8[1];
     uint32_t vallen;  /* value length */
-    char     data[1];
+    char     data[];
 } SetElemDelData;
 
 typedef struct _Set_elem_delete_log {
@@ -324,7 +324,7 @@ typedef struct _Btree_elem_insert_data {
     uint8_t  neflag;  /* eflag length */
     uint8_t  reserved_8[3];
     uint32_t vallen;  /* value length */
-    char     data[1];
+    char     data[];
 } BtreeElemInsData;
 
 typedef struct _Btree_elem_insert_log {
@@ -340,7 +340,7 @@ typedef struct _Btree_elem_delete_data {
     uint16_t keylen;  /* key length */
     uint8_t  drop;    /* drop if empty */
     uint8_t  nbkey;   /* bkey length */
-    char     data[1];
+    char     data[];
 } BtreeElemDelData;
 
 typedef struct _Btree_elem_delete_log {
@@ -365,7 +365,7 @@ typedef struct _Btree_elem_delete_logical_data {
     uint8_t  compop;     /* compare operation */
     uint32_t offset;     /* element offset */
     uint32_t reqcount;   /* request count */
-    char     data[1];
+    char     data[];
 } BtreeElemDelLgcData;
 
 typedef struct _Btree_elem_delete_logical_log {

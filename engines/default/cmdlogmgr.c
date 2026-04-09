@@ -62,7 +62,7 @@ typedef struct _group_commit {
 
 typedef struct _waiter_chunk {
     struct _waiter_chunk *next;
-    log_waiter_t          waiters[1];
+    log_waiter_t          waiters[];
 } log_waiter_chunk;
 
 typedef struct _waiter_info {
