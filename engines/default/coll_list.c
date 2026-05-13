@@ -131,7 +131,7 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
         assert(elem->slabs_clsid > 0);
 
         elem->refcount    = 0;
-        elem->nbytes      = nbytes;
+        elem->nbytes      = (uint16_t)nbytes;
         elem->status = ELEM_STATUS_UNLINKED; /* unlinked state */
     }
     return elem;

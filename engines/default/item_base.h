@@ -172,9 +172,10 @@ typedef struct _list_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  status;              /* element lifecycle state: linked(in-list) or unlinked(removed but referenced) */
+    uint16_t reserved;            /* reserved space */
+    uint16_t nbytes;              /**< The total size of the data (in bytes) */
     struct _list_elem_item *next; /* next chain in double linked list */
     struct _list_elem_item *prev; /* prev chain in double linked list */
-    uint32_t nbytes;              /**< The total size of the data (in bytes) */
     char     value[];             /**< the data itself */
 } list_elem_item;
 
@@ -183,9 +184,10 @@ typedef struct _set_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  status;              /* element lifecycle state: linked(in-set) or unlinked(removed but referenced) */
-    uint32_t hval;                /* hash value */
+    uint16_t reserved;            /* reserved space */
+    uint16_t nbytes;              /**< The total size of the data (in bytes) */
     struct _set_elem_item *next;  /* hash chain next */
-    uint32_t nbytes;              /**< The total size of the data (in bytes) */
+    uint32_t hval;                /* hash value */
     char     value[];             /**< the data itself */
 } set_elem_item;
 
@@ -194,10 +196,11 @@ typedef struct _map_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  status;              /* element lifecycle state: linked(in-map) or unlinked(removed but referenced) */
-    uint32_t hval;                /* hash value */
-    struct _map_elem_item *next;  /* hash chain next */
-    uint8_t nfield;               /**< The total size of the field (in bytes) */
+    uint8_t  nfield;              /**< The total size of the field (in bytes) */
+    uint8_t  reserved;            /* reserved space */
     uint16_t nbytes;              /**< The total size of the data (in bytes) */
+    struct _map_elem_item *next;  /* hash chain next */
+    uint32_t hval;                /* hash value */
     unsigned char data[];         /* data: <field, value> */
 } map_elem_item;
 
@@ -301,14 +304,14 @@ typedef struct _btree_indx_node {
 } btree_indx_node;
 
 typedef struct _btree_meta_info {
-    int32_t  mcnt;      /* maximum count */
-    int32_t  ccnt;      /* current count */
-    uint8_t  ovflact;   /* overflow action */
-    uint8_t  mflags;    /* sticky, readable, trimmed flags */
-    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
-    uint32_t stotal;    /* total space */
-    uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
-    uint8_t  dummy[7];  /* reserved space */
+    int32_t  mcnt;         /* maximum count */
+    int32_t  ccnt;         /* current count */
+    uint8_t  ovflact;      /* overflow action */
+    uint8_t  mflags;       /* sticky, readable, trimmed flags */
+    uint16_t itdist;       /* distance from hash item (unit: sizeof(size_t)) */
+    uint32_t stotal;       /* total space */
+    uint8_t  bktype;       /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
+    uint8_t  reserved[7];  /* reserved space */
     bkey_t   maxbkeyrange;
     btree_indx_node *root;
 } btree_meta_info;
