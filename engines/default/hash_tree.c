@@ -316,7 +316,7 @@ static uint32_t do_htree_range(htree_node **root_pptr,
 
     for (int hidx = 0; hidx < HTREE_HASHTAB_SIZE && *take > 0; hidx++) {
         bool is_child = (node->hcnt[hidx] == -1);
-        if (!is_child && node->hcnt[hidx] == 0) continue;
+        if (node->hcnt[hidx] == 0) continue;
 
         /* skip the entire slot if it falls within the skip range */
         uint32_t elem_cnt = is_child ? ((htree_node *)node->htab[hidx])->tot_elem_cnt
