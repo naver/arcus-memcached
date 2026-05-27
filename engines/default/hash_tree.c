@@ -423,10 +423,10 @@ htree_elem_item *htree_elem_find(htree_node *root,
     return find;
 }
 
-void htree_elem_replace_at(htree_elem_pos *pos,
-                           htree_elem_item *old_elem,
-                           htree_elem_item *new_elem)
+void htree_elem_replace_at(htree_elem_pos *pos, htree_elem_item *new_elem)
 {
+    htree_elem_item *old_elem = (pos->prev != NULL) ? pos->prev->next
+                              : (htree_elem_item *)pos->node->htab[pos->hidx];
     new_elem->hval = old_elem->hval;
     new_elem->next = old_elem->next;
     if (pos->prev != NULL)

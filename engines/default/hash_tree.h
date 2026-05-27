@@ -63,9 +63,7 @@ htree_elem_item *htree_elem_find(htree_node *root,
                                  htree_ops *ops,
                                  htree_elem_pos *pos);
 
-void htree_elem_replace_at(htree_elem_pos *pos,
-                           htree_elem_item *old_elem,
-                           htree_elem_item *new_elem);
+void htree_elem_replace_at(htree_elem_pos *pos, htree_elem_item *new_elem);
 
 ENGINE_ERROR_CODE htree_elem_link(htree_node **root_pptr,
                                   htree_elem_item *elem,

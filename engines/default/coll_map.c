@@ -167,22 +167,20 @@ static void do_map_elem_release(map_elem_item *elem)
     }
 }
 
-static ENGINE_ERROR_CODE do_map_elem_replace_at(map_meta_info *info,
-                                                htree_elem_pos *pos,
-                                                map_elem_item *old_elem,
-                                                map_elem_item *new_elem)
+static void do_map_elem_replace(map_meta_info *info,
+                                htree_elem_pos *pos,
+                                map_elem_item *new_elem)
 {
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_COLLFLG(info) && do_map_elem_ntotal(old_elem) < do_map_elem_ntotal(new_elem)
-        && do_item_sticky_overflowed())
-        return ENGINE_ENOMEM;
-#endif
+    map_elem_item *old_elem = (pos->prev != NULL)
+                            ? (map_elem_item *)pos->prev->next
+                            : (map_elem_item *)pos->node->htab[pos->hidx];
+
     ssize_t space_delta = (ssize_t)slabs_space_size(do_map_elem_ntotal(new_elem))
                         - (ssize_t)slabs_space_size(do_map_elem_ntotal(old_elem));
 
     CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
 
-    htree_elem_replace_at(pos, (htree_elem_item *)old_elem, (htree_elem_item *)new_elem);
+    htree_elem_replace_at(pos, (htree_elem_item *)new_elem);
     new_elem->status = ELEM_STATUS_LINKED;
     old_elem->status = ELEM_STATUS_UNLINKED;
 
@@ -190,8 +188,6 @@ static ENGINE_ERROR_CODE do_map_elem_replace_at(map_meta_info *info,
         do_map_elem_free(old_elem);
 
     do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
-
-    return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
@@ -244,17 +240,19 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
     }
 
     /* chain-replace: different size or elem in use */
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_COLLFLG(info) && old_elem->nbytes < (uint16_t)nbytes
+        && do_item_sticky_overflowed())
+        return ENGINE_ENOMEM;
+#endif
     map_elem_item *new_elem = do_map_elem_alloc(field->length, nbytes, cookie);
     if (new_elem == NULL)
         return ENGINE_ENOMEM;
     memcpy(new_elem->data, field->value, field->length);
     memcpy(new_elem->data + field->length, value, nbytes);
 
-    ENGINE_ERROR_CODE ret = do_map_elem_replace_at(info, &pos, old_elem, new_elem);
-    if (ret != ENGINE_SUCCESS)
-        do_map_elem_free(new_elem);
-
-    return ret;
+    do_map_elem_replace(info, &pos, new_elem);
+    return ENGINE_SUCCESS;
 }
 
 static inline ssize_t do_map_elem_unlink_process(map_meta_info *info, map_elem_item *e)
@@ -441,9 +439,15 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     if (!replace_if_exist)
         return ENGINE_ELEM_EEXISTS;
 
-    ENGINE_ERROR_CODE ret = do_map_elem_replace_at(info, &pos, old_elem, elem);
-    if (ret == ENGINE_SUCCESS && replaced) *replaced = true;
-    return ret;
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_COLLFLG(info) && do_map_elem_ntotal(old_elem) < do_map_elem_ntotal(elem)
+        && do_item_sticky_overflowed())
+        return ENGINE_ENOMEM;
+#endif
+
+    do_map_elem_replace(info, &pos, elem);
+    if (replaced) *replaced = true;
+    return ENGINE_SUCCESS;
 }
 
 /*
