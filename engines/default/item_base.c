@@ -362,15 +362,6 @@ void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
     prefix_bytes_decr(it->pfxptr, item_type, nspace);
 }
 
-void do_coll_space_update(coll_meta_info *info, ENGINE_ITEM_TYPE type,
-                          ssize_t space_delta)
-{
-    if (space_delta > 0)
-        do_coll_space_incr(info, type, (size_t)space_delta);
-    else if (space_delta < 0)
-        do_coll_space_decr(info, type, (size_t)-space_delta);
-}
-
 /* Max hash key length for calculating hash value */
 #define MAX_HKEY_LEN 250
 

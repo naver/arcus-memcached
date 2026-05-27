@@ -187,7 +187,11 @@ static void do_map_elem_replace(map_meta_info *info,
     if (old_elem->refcount == 0)
         do_map_elem_free(old_elem);
 
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+    if (space_delta > 0)
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)space_delta);
+    else if (space_delta < 0)
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-space_delta);
+
 }
 
 static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
@@ -216,7 +220,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     CLOG_MAP_ELEM_INSERT(info, NULL, elem);
 
     info->ccnt++;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+    do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)space_delta);
 
     return ENGINE_SUCCESS;
 }
@@ -290,7 +294,7 @@ static ENGINE_ERROR_CODE do_map_elem_delete_by_field(map_meta_info *info,
 
     do_map_elem_release(elem);
     info->ccnt--;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, delta);
+    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-delta);
 
     return ENGINE_SUCCESS;
 }
@@ -316,7 +320,7 @@ static uint32_t do_map_elem_delete_by_fields(map_meta_info *info,
     }
 
     info->ccnt -= fcnt;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-space_delta);
 
     CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
 
@@ -342,7 +346,7 @@ static uint32_t do_map_elem_delete_all(map_meta_info *info)
     }
 
     info->ccnt -= fcnt;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-space_delta);
 
     CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
 
@@ -381,7 +385,7 @@ static uint32_t do_map_elem_get_by_fields(map_meta_info *info,
     }
     if (delete) {
         info->ccnt -= fcnt;
-        do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-space_delta);
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
     }
     return fcnt;
@@ -405,7 +409,7 @@ static uint32_t do_map_elem_get_all(map_meta_info *info,
             elem_array[i] = e;
         }
         info->ccnt -= fcnt;
-        do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_MAP, space_delta);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (size_t)-space_delta);
 
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
     } else {

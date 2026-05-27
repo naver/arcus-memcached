@@ -200,8 +200,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     CLOG_SET_ELEM_INSERT(info, elem);
 
     info->ccnt++;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_SET, space_delta);
-
+    do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, (size_t)space_delta);
     return ENGINE_SUCCESS;
 }
 
@@ -229,7 +228,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete_by_value(set_meta_info *info,
 
     do_set_elem_release(elem);
     info->ccnt--;
-    do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_SET, space_delta);
+    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, (size_t)-space_delta);
 
     return ENGINE_SUCCESS;
 }
@@ -390,7 +389,7 @@ static uint32_t do_set_elem_get_rand(set_meta_info *info,
         }
 
         info->ccnt -= fcnt;
-        do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_SET, space_delta);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, (size_t)-space_delta);
 
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
         return fcnt;
@@ -424,7 +423,7 @@ static uint32_t do_set_elem_get_all(set_meta_info *info,
             elem_array[i] = e;
         }
         info->ccnt -= fcnt;
-        do_coll_space_update((coll_meta_info *)info, ITEM_TYPE_SET, space_delta);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, (size_t)-space_delta);
 
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
     } else {
