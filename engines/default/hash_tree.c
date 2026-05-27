@@ -393,20 +393,19 @@ htree_elem_item *htree_elem_find(htree_node *root,
     if (root == NULL)
         return NULL;
 
-    uint32_t hval = (uint32_t)genhash_string_hash(key, nkey);
-
     htree_node *node = root;
     int hidx;
+    uint32_t hval = (uint32_t)genhash_string_hash(key, nkey);
+
     while (true) {
         hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
         if (node->hcnt[hidx] >= 0)
             break;
         node = (htree_node *)node->htab[hidx];
     }
-    if (node->hcnt[hidx] == 0) return NULL;
 
-    htree_elem_item *find;
     htree_elem_item *prev = NULL;
+    htree_elem_item *find;
     for (find = (htree_elem_item *)node->htab[hidx];
          find != NULL;
          find = find->next) {
