@@ -446,16 +446,17 @@ static void do_map_elem_unlink(map_meta_info *info,
     }
 }
 
-static bool do_map_elem_traverse_dfs_byfield(map_meta_info *info, map_hash_node *node, const int hval,
-                                             const field_t *field, const bool delete,
-                                             map_elem_item **elem_array)
+static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, const int hval,
+                                     const field_t *field, const bool delete,
+                                     map_elem_item **elem_array)
 {
+    assert(elem_array != NULL);
     bool ret;
     int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_traverse_dfs_byfield(info, child_node, hval, field, delete, elem_array);
+        ret = do_map_elem_get_by_field(info, child_node, hval, field, delete, elem_array);
         if (ret && delete) {
             if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
@@ -469,14 +470,45 @@ static bool do_map_elem_traverse_dfs_byfield(map_meta_info *info, map_hash_node 
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
-                    if (elem_array) {
-                        elem->refcount++;
-                        elem_array[0] = elem;
-                    }
-
+                    elem->refcount++;
+                    elem_array[0] = elem;
                     if (delete) {
                         do_map_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
                     }
+                    ret = true;
+                    break;
+                }
+                prev = elem;
+                elem = elem->next;
+            }
+        }
+    }
+    return ret;
+}
+
+static bool do_map_elem_delete_by_field(map_meta_info *info, map_hash_node *node, const int hval,
+                                        const field_t *field)
+{
+    bool ret;
+    int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
+
+    if (node->hcnt[hidx] == -1) {
+        map_hash_node *child_node = node->htab[hidx];
+        ret = do_map_elem_delete_by_field(info, child_node, hval, field);
+        if (ret) {
+            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
+                do_map_node_unlink(info, node, hidx);
+            }
+            node->tot_elem_cnt -= 1;
+        }
+    } else {
+        ret = false;
+        if (node->hcnt[hidx] > 0) {
+            map_elem_item *prev = NULL;
+            map_elem_item *elem = node->htab[hidx];
+            while (elem != NULL) {
+                if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
+                    do_map_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
                     ret = true;
                     break;
                 }
@@ -539,7 +571,7 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
         } else {
             for (int ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-                if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii], true, NULL)) {
+                if (do_map_elem_delete_by_field(info, info->root, hval, &flist[ii])) {
                     delcnt++;
                 }
             }
@@ -647,8 +679,8 @@ static uint32_t do_map_elem_get(map_meta_info *info,
     } else {
         for (int ii = 0; ii < numfields; ii++) {
             int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-            if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii],
-                                                 delete, &elem_array[fcnt])) {
+            if (do_map_elem_get_by_field(info, info->root, hval, &flist[ii],
+                                         delete, &elem_array[fcnt])) {
                 fcnt++;
             }
         }
