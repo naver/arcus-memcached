@@ -473,10 +473,8 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
 }
 
 static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
-                                                       const char *val, const int vlen,
-                                                       enum elem_delete_cause cause)
+                                                       const char *val, const int vlen)
 {
-    assert(cause == ELEM_DELETE_NORMAL);
     ENGINE_ERROR_CODE ret;
     if (info->root != NULL) {
         int hval = genhash_string_hash(val, vlen);
@@ -603,13 +601,11 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
     return NULL;
 }
 
-static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
-                                   enum elem_delete_cause cause)
+static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count)
 {
-    assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, cause);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
         if (info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(info, NULL, 0);
         }
@@ -666,12 +662,13 @@ static uint32_t do_set_elem_get(set_meta_info *info,
 {
     assert(info->root);
     uint32_t fcnt;
+    enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
 
     if (delete) {
-        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
+        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
     }
     if (count >= info->ccnt || count == 0) { /* Return all */
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array, ELEM_DELETE_NORMAL);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array, cause);
     } else { /* Return some */
         fcnt = do_set_elem_traverse_rand(info, count, delete, elem_array);
     }
@@ -679,7 +676,7 @@ static uint32_t do_set_elem_get(set_meta_info *info,
         do_set_node_unlink(info, NULL, 0);
     }
     if (delete) {
-        CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
+        CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return fcnt;
 }
@@ -845,7 +842,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
+        ret = do_set_elem_delete_with_value(info, value, nbytes);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
                 do_item_unlink(it, ITEM_UNLINK_NORMAL);
@@ -948,7 +945,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
 
 uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
 {
-    return do_set_elem_delete(info, count, ELEM_DELETE_COLL);
+    return do_set_elem_delete(info, count);
 }
 
 /* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
@@ -1187,7 +1184,7 @@ ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
         }
 
         info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
+        ret = do_set_elem_delete_with_value(info, value, nbytes);
         if (ret == ENGINE_ELEM_ENOENT) {
             logger->log(EXTENSION_LOG_INFO, NULL, "set_apply_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u\n",
