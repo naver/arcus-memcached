@@ -116,15 +116,6 @@ static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
     return sizeof(set_elem_item) + elem->nbytes;
 }
 
-static inline bool is_leaf_node(set_hash_node *node)
-{
-    for (int hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-        if (node->hcnt[hidx] == -1)
-            return false;
-    }
-    return true;
-}
-
 static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
 {
@@ -291,6 +282,7 @@ static void do_set_node_unlink(set_meta_info *info,
         int hidx, fcnt = 0;
 
         node = (set_hash_node *)par_node->htab[par_hidx];
+        assert(node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2));
 
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             assert(node->hcnt[hidx] >= 0);
@@ -446,8 +438,7 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
         set_hash_node *child_node = node->htab[hidx];
         ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
-                && is_leaf_node(child_node)) {
+            if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                 do_set_node_unlink(info, node, hidx);
             }
             node->tot_elem_cnt -= 1;
@@ -505,8 +496,7 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                                 (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
             fcnt += ecnt;
             if (delete) {
-                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
-                    && is_leaf_node(child_node)) {
+                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                     do_set_node_unlink(info, node, hidx);
                 }
                 node->tot_elem_cnt -= ecnt;
@@ -573,8 +563,7 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
             }
             set_elem_item *found = do_set_elem_at_offset(info, child_node, offset, delete);
             if (delete) {
-                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
-                    && is_leaf_node(child_node)) {
+                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                     do_set_node_unlink(info, node, hidx);
                 }
                 node->tot_elem_cnt -= 1;

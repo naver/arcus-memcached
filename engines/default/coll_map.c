@@ -76,15 +76,6 @@ static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
     return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
 }
 
-static inline bool is_leaf_node(map_hash_node *node)
-{
-    for (int hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
-        if (node->hcnt[hidx] == -1)
-            return false;
-    }
-    return true;
-}
-
 static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
 {
@@ -253,6 +244,7 @@ static void do_map_node_unlink(map_meta_info *info,
         int hidx, fcnt = 0;
 
         node = (map_hash_node *)par_node->htab[par_hidx];
+        assert(node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2));
 
         for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
             assert(node->hcnt[hidx] >= 0);
@@ -465,8 +457,7 @@ static bool do_map_elem_traverse_dfs_byfield(map_meta_info *info, map_hash_node 
         map_hash_node *child_node = node->htab[hidx];
         ret = do_map_elem_traverse_dfs_byfield(info, child_node, hval, field, delete, elem_array);
         if (ret && delete) {
-            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)
-                && is_leaf_node(child_node)) {
+            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
             }
             node->tot_elem_cnt -= 1;
@@ -512,8 +503,7 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
                                                       (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
             fcnt += ecnt;
             if (delete) {
-                if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)
-                    && is_leaf_node(child_node)) {
+                if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                     do_map_node_unlink(info, node, hidx);
                 }
                 node->tot_elem_cnt -= ecnt;
