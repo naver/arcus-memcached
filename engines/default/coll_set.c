@@ -494,7 +494,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
 
 static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
-                                    set_elem_item **elem_array)
+                                    set_elem_item **elem_array, enum elem_delete_cause cause)
 {
     int hidx;
     int fcnt = 0; /* found count */
@@ -504,7 +504,7 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
             set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
             int rcnt = (count > 0 ? (count - fcnt) : 0);
             int ecnt = do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
-                                                (elem_array==NULL ? NULL : &elem_array[fcnt]));
+                                                (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
             fcnt += ecnt;
             if (delete) {
                 if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
@@ -521,9 +521,7 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                     elem_array[fcnt] = elem;
                 }
                 fcnt++;
-                if (delete) do_set_elem_unlink(info, node, hidx, NULL, elem,
-                                               (elem_array==NULL ? ELEM_DELETE_COLL
-                                                                 : ELEM_DELETE_NORMAL));
+                if (delete) do_set_elem_unlink(info, node, hidx, NULL, elem, cause);
                 if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
@@ -611,7 +609,7 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, cause);
         if (info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(info, NULL, 0);
         }
@@ -673,7 +671,7 @@ static uint32_t do_set_elem_get(set_meta_info *info,
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
     }
     if (count >= info->ccnt || count == 0) { /* Return all */
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array, ELEM_DELETE_NORMAL);
     } else { /* Return some */
         fcnt = do_set_elem_traverse_rand(info, count, delete, elem_array);
     }
