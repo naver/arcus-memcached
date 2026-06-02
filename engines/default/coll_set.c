@@ -255,7 +255,7 @@ static bool do_set_node_split(set_meta_info *info,
 
         /* re-compute hidx at child depth */
         int hidx = SET_GET_HASHIDX(elem->hval, n_node->hdepth);
-        
+
         /* insert into child node's slot */
         elem->next = n_node->htab[hidx];
         n_node->htab[hidx] = elem;
@@ -285,18 +285,20 @@ static bool do_set_node_try_split(set_meta_info *info,
     int hidx = *hidx_ptr;
     /* chain not full: no split needed */
     if (par_node->hcnt[hidx] < SET_MAX_HASHCHAIN_SIZE) return true;
-    
+
     /* split: allocate child, transfer chain, and link as child of par_node */
     if (!do_set_node_split(info, par_node, hidx, cookie)) return false;
-    
+
     /* update *node_pptr and *hidx_ptr so caller inserts into the child node */
     *node_pptr = (set_hash_node *)par_node->htab[hidx];
     *hidx_ptr = SET_GET_HASHIDX(hval, (*node_pptr)->hdepth);
     return true;
 }
 
-static void do_set_node_unlink(set_meta_info *info,
-                               set_hash_node *par_node, const int par_hidx)
+/* Merge node back into par_node at par_hidx:
+ * transfer node's hash chain back into par_node's slot and free node. */
+static void do_set_node_merge(set_meta_info *info,
+                              set_hash_node *par_node, const int par_hidx)
 {
     set_hash_node *node;
 
@@ -304,36 +306,38 @@ static void do_set_node_unlink(set_meta_info *info,
         node = info->root;
         info->root = NULL;
         assert(node->tot_elem_cnt == 0);
-    } else {
-        assert(par_node->hcnt[par_hidx] == -1); /* child hash node */
-        set_elem_item *head = NULL;
-        set_elem_item *elem;
-        int hidx, fcnt = 0;
-
-        node = (set_hash_node *)par_node->htab[par_hidx];
-        assert(node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2));
-
-        for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-            assert(node->hcnt[hidx] >= 0);
-            if (node->hcnt[hidx] > 0) {
-                fcnt += node->hcnt[hidx];
-                while (node->htab[hidx] != NULL) {
-                    elem = node->htab[hidx];
-                    node->htab[hidx] = elem->next;
-                    node->hcnt[hidx] -= 1;
-
-                    elem->next = head;
-                    head = elem;
-                }
-                assert(node->hcnt[hidx] == 0);
-            }
+        if (info->stotal > 0) { /* apply memory space */
+            size_t stotal = slabs_space_size(sizeof(set_hash_node));
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
         }
-        assert(fcnt == node->tot_elem_cnt);
-        node->tot_elem_cnt = 0;
-
-        par_node->htab[par_hidx] = head;
-        par_node->hcnt[par_hidx] = fcnt;
+        do_set_node_free(node);
+        return;
     }
+    assert(par_node->hcnt[par_hidx] == -1);
+    node = (set_hash_node *)par_node->htab[par_hidx];
+
+    set_elem_item *head = NULL;
+    set_elem_item *elem;
+    int fcnt = 0;
+    for (int hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+        assert(node->hcnt[hidx] >= 0);
+        if (node->hcnt[hidx] == 0) continue;
+
+        fcnt += node->hcnt[hidx];
+        while (node->htab[hidx] != NULL) {
+            elem = (set_elem_item *)node->htab[hidx];
+            node->htab[hidx] = elem->next;
+            node->hcnt[hidx] -= 1;
+            elem->next = head;
+            head = elem;
+        }
+        assert(node->hcnt[hidx] == 0);
+    }
+    assert(fcnt == node->tot_elem_cnt);
+    node->tot_elem_cnt = 0;
+
+    par_node->htab[par_hidx] = head;
+    par_node->hcnt[par_hidx] = fcnt;
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
@@ -342,6 +346,19 @@ static void do_set_node_unlink(set_meta_info *info,
 
     /* free the node */
     do_set_node_free(node);
+}
+
+/* Merge child back into par_node if child is empty or too sparse (< MAX/2). */
+static void do_set_node_try_merge(set_meta_info *info,
+                                  set_hash_node *par_node, const int par_hidx,
+                                  set_hash_node *child)
+{
+    if (info->root == NULL) return;
+    if (child->tot_elem_cnt == 0 ||
+        (par_node != NULL &&
+         child->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2))) {
+        do_set_node_merge(info, par_node, par_hidx);
+    }
 }
 
 static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem,
@@ -409,9 +426,18 @@ static void do_set_elem_unlink(set_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->status = ELEM_STATUS_UNLINKED;
     node->hcnt[hidx] -= 1;
-    node->tot_elem_cnt -= 1;
+    elem->status = ELEM_STATUS_UNLINKED;
+
+    /* decrement tot_elem_cnt on every node from root down to node */
+    set_hash_node *cur = info->root;
+    while (cur != node) {
+        cur->tot_elem_cnt -= 1;
+        int cidx = SET_GET_HASHIDX(elem->hval, cur->hdepth);
+        assert(cur->hcnt[cidx] == -1);
+        cur = (set_hash_node *)cur->htab[cidx];
+    }
+    cur->tot_elem_cnt -= 1;
     info->ccnt--;
 
     CLOG_SET_ELEM_DELETE(info, elem, cause);
@@ -462,10 +488,7 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
         set_hash_node *child_node = node->htab[hidx];
         ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                do_set_node_unlink(info, node, hidx);
-            }
-            node->tot_elem_cnt -= 1;
+            do_set_node_try_merge(info, node, hidx, child_node);
         }
     } else {
         ret = ENGINE_ELEM_ENOENT;
@@ -495,9 +518,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
         int hval = genhash_string_hash(val, vlen);
         ret = do_set_elem_traverse_delete(info, info->root, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (info->root->tot_elem_cnt == 0) {
-                do_set_node_unlink(info, NULL, 0);
-            }
+            do_set_node_try_merge(info, NULL, 0, info->root);
         }
     } else {
         ret = ENGINE_ELEM_ENOENT;
@@ -520,10 +541,7 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                                 (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
             fcnt += ecnt;
             if (delete) {
-                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                    do_set_node_unlink(info, node, hidx);
-                }
-                node->tot_elem_cnt -= ecnt;
+                do_set_node_try_merge(info, node, hidx, child_node);
             }
         } else if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
@@ -587,10 +605,7 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
             }
             set_elem_item *found = do_set_elem_at_offset(info, child_node, offset, delete);
             if (delete) {
-                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                    do_set_node_unlink(info, node, hidx);
-                }
-                node->tot_elem_cnt -= 1;
+                do_set_node_try_merge(info, node, hidx, child_node);
             }
             return found;
         } else if (node->hcnt[hidx] > 0) {
@@ -619,9 +634,7 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count)
     uint32_t fcnt = 0;
     if (info->root != NULL) {
         fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
-        if (info->root->tot_elem_cnt == 0) {
-            do_set_node_unlink(info, NULL, 0);
-        }
+        do_set_node_try_merge(info, NULL, 0, info->root);
     }
     return fcnt;
 }
@@ -685,10 +698,8 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     } else { /* Return some */
         fcnt = do_set_elem_traverse_rand(info, count, delete, elem_array);
     }
-    if (delete && info->root->tot_elem_cnt == 0) {
-        do_set_node_unlink(info, NULL, 0);
-    }
     if (delete) {
+        do_set_node_try_merge(info, NULL, 0, info->root);
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return fcnt;
@@ -734,7 +745,13 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     ret = do_set_elem_link(info, elem, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
-            do_set_node_unlink(info, NULL, 0);
+            set_hash_node *node = info->root;
+            info->root = NULL;
+            if (info->stotal > 0) {
+                size_t stotal = slabs_space_size(sizeof(set_hash_node));
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
+            }
+            do_set_node_free(node);
         }
         return ret;
     }
