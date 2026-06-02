@@ -237,33 +237,62 @@ static void do_set_elem_release(set_elem_item *elem)
     }
 }
 
-static void do_set_node_link(set_meta_info *info,
-                             set_hash_node *par_node, const int par_hidx,
-                             set_hash_node *node)
+/* Split par_node's chain at par_hidx into a new child node:
+ * allocate child, transfer existing chain into it, and link it as a child. */
+static bool do_set_node_split(set_meta_info *info,
+                              set_hash_node *par_node, const int par_hidx,
+                              const void *cookie)
 {
-    if (par_node == NULL) {
-        info->root = node;
-    } else {
-        set_elem_item *elem;
-        while (par_node->htab[par_hidx] != NULL) {
-            elem = par_node->htab[par_hidx];
-            par_node->htab[par_hidx] = elem->next;
+    set_hash_node *n_node = do_set_node_alloc(par_node->hdepth + 1, cookie);
+    if (n_node == NULL)
+        return false;
 
-            int hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
-            elem->next = node->htab[hidx];
-            node->htab[hidx] = elem;
-            node->hcnt[hidx] += 1;
-            node->tot_elem_cnt += 1;
-        }
-        assert(node->tot_elem_cnt == par_node->hcnt[par_hidx]);
-        par_node->htab[par_hidx] = node;
-        par_node->hcnt[par_hidx] = -1; /* child hash node */
+    set_elem_item *elem;
+    while (par_node->htab[par_hidx] != NULL) {
+        /* pop from par_node's chain */
+        elem = (set_elem_item *)par_node->htab[par_hidx];
+        par_node->htab[par_hidx] = elem->next;
+
+        /* re-compute hidx at child depth */
+        int hidx = SET_GET_HASHIDX(elem->hval, n_node->hdepth);
+        
+        /* insert into child node's slot */
+        elem->next = n_node->htab[hidx];
+        n_node->htab[hidx] = elem;
+        n_node->hcnt[hidx] += 1;
+        n_node->tot_elem_cnt += 1;
     }
+    assert(n_node->tot_elem_cnt == par_node->hcnt[par_hidx]);
+
+    /* replace the chain slot with the child node */
+    par_node->htab[par_hidx] = n_node;
+    par_node->hcnt[par_hidx] = -1;
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
         do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
+    return true;
+}
+
+/* Split the chain at *hidx_ptr into a child node if full,
+ * updating *node_pptr and *hidx_ptr to the insertion slot. */
+static bool do_set_node_try_split(set_meta_info *info,
+                                  set_hash_node **node_pptr, int *hidx_ptr,
+                                  const int hval, const void *cookie)
+{
+    set_hash_node *par_node = *node_pptr;
+    int hidx = *hidx_ptr;
+    /* chain not full: no split needed */
+    if (par_node->hcnt[hidx] < SET_MAX_HASHCHAIN_SIZE) return true;
+    
+    /* split: allocate child, transfer chain, and link as child of par_node */
+    if (!do_set_node_split(info, par_node, hidx, cookie)) return false;
+    
+    /* update *node_pptr and *hidx_ptr so caller inserts into the child node */
+    *node_pptr = (set_hash_node *)par_node->htab[hidx];
+    *hidx_ptr = SET_GET_HASHIDX(hval, (*node_pptr)->hdepth);
+    return true;
 }
 
 static void do_set_node_unlink(set_meta_info *info,
@@ -344,30 +373,25 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
         return ENGINE_ELEM_EEXISTS;
     }
 
-    if (node->hcnt[hidx] >= SET_MAX_HASHCHAIN_SIZE) {
-        set_hash_node *n_node = do_set_node_alloc(node->hdepth+1, cookie);
-        if (n_node == NULL) {
-            return ENGINE_ENOMEM;
-        }
-        do_set_node_link(info, node, hidx, n_node);
+    /* split the hash chain into a new child node if it is full */
+    if (!do_set_node_try_split(info, &node, &hidx, elem->hval, cookie))
+        return ENGINE_ENOMEM;
 
-        node = n_node;
-        hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
-    }
-
+    /* prepend elem to the hash chain */
     elem->next = node->htab[hidx];
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
-    node->tot_elem_cnt += 1;
     elem->status = ELEM_STATUS_LINKED;
 
-    set_hash_node *par_node = info->root;
-    while (par_node != node) {
-        par_node->tot_elem_cnt += 1;
-        hidx = SET_GET_HASHIDX(elem->hval, par_node->hdepth);
-        assert(par_node->hcnt[hidx] == -1);
-        par_node = par_node->htab[hidx];
+    /* increment tot_elem_cnt on every node from root down to node */
+    set_hash_node *cur = info->root;
+    while (cur != node) {
+        cur->tot_elem_cnt += 1;
+        int cidx = SET_GET_HASHIDX(elem->hval, cur->hdepth);
+        assert(cur->hcnt[cidx] == -1);
+        cur = (set_hash_node *)cur->htab[cidx];
     }
+    cur->tot_elem_cnt += 1;
     info->ccnt++;
 
     if (1) { /* apply memory space */
@@ -698,7 +722,11 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_set_node_link(info, NULL, 0, r_node);
+        info->root = r_node;
+        if (1) { /* apply memory space */
+            size_t stotal = slabs_space_size(sizeof(set_hash_node));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
+        }
         new_root_flag = true;
     }
 
