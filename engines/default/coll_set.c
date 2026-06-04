@@ -614,10 +614,11 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
     return NULL;
 }
 
-static uint32_t do_set_elem_traverse_rand(set_meta_info *info,
-                                          const uint32_t count, const bool delete,
-                                          set_elem_item **elem_array)
+static uint32_t do_set_elem_get_rand(set_meta_info *info,
+                                     const uint32_t count, const bool delete,
+                                     set_elem_item **elem_array)
 {
+    assert(elem_array != NULL);
     uint32_t fcnt = 0;
 
     if (delete) { /* Deleting partial elements */
@@ -671,7 +672,7 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     if (count >= info->ccnt || count == 0) { /* Return all */
         fcnt = do_set_elem_get_all(info, info->root, delete, elem_array);
     } else { /* Return some */
-        fcnt = do_set_elem_traverse_rand(info, count, delete, elem_array);
+        fcnt = do_set_elem_get_rand(info, count, delete, elem_array);
     }
     if (delete && info->root->tot_elem_cnt == 0) {
         do_set_node_unlink(info, NULL, 0);
