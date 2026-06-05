@@ -543,9 +543,9 @@ static int do_set_elem_delete_by_count(set_meta_info *info, set_hash_node *node,
     return fcnt;
 }
 
-static int do_set_elem_traverse_sampling(set_meta_info *info, set_hash_node *node,
-                                         uint32_t remain, const uint32_t count,
-                                         set_elem_item **elem_array)
+static int do_set_elem_get_sampling(set_meta_info *info, set_hash_node *node,
+                                    uint32_t remain, const uint32_t count,
+                                    set_elem_item **elem_array)
 {
     int hidx;
     int fcnt = 0; /* found count */
@@ -553,8 +553,8 @@ static int do_set_elem_traverse_sampling(set_meta_info *info, set_hash_node *nod
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] == -1) {
             set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
-            fcnt += do_set_elem_traverse_sampling(info, child_node, remain,
-                                                  count - fcnt, &elem_array[fcnt]);
+            fcnt += do_set_elem_get_sampling(info, child_node, remain,
+                                             count - fcnt, &elem_array[fcnt]);
             remain -= child_node->tot_elem_cnt;
         } else if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
@@ -574,8 +574,8 @@ static int do_set_elem_traverse_sampling(set_meta_info *info, set_hash_node *nod
     return fcnt;
 }
 
-static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *node,
-                                            uint32_t offset, const bool delete)
+static set_elem_item *do_set_elem_get_by_offset(set_meta_info *info, set_hash_node *node,
+                                                uint32_t offset, const bool delete)
 {
     int hidx;
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
@@ -585,7 +585,7 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
                 offset -= child_node->tot_elem_cnt;
                 continue;
             }
-            set_elem_item *found = do_set_elem_at_offset(info, child_node, offset, delete);
+            set_elem_item *found = do_set_elem_get_by_offset(info, child_node, offset, delete);
             if (delete) {
                 if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                     do_set_node_unlink(info, node, hidx);
@@ -624,8 +624,8 @@ static uint32_t do_set_elem_get_rand(set_meta_info *info,
     if (delete) { /* Deleting partial elements */
         while (fcnt < count) {
             int rand_offset = (rand() % info->ccnt);
-            set_elem_item *found = do_set_elem_at_offset(info, info->root,
-                                                         rand_offset, delete);
+            set_elem_item *found = do_set_elem_get_by_offset(info, info->root,
+                                                             rand_offset, delete);
             assert(found != NULL);
             elem_array[fcnt++] = found;
         }
@@ -636,16 +636,16 @@ static uint32_t do_set_elem_get_rand(set_meta_info *info,
         while (fcnt < count) {
             int rand_offset = (rand() % info->ccnt);
             if (hash_insert(&offset_ht, rand_offset)) {
-                set_elem_item *found = do_set_elem_at_offset(info, info->root,
-                                                             rand_offset, delete);
+                set_elem_item *found = do_set_elem_get_by_offset(info, info->root,
+                                                                 rand_offset, delete);
                 assert(found != NULL);
                 elem_array[fcnt++] = found;
             }
         }
         hash_free(&offset_ht);
     } else { /* Use sampling */
-        fcnt = do_set_elem_traverse_sampling(info, info->root, info->ccnt,
-                                             count, elem_array);
+        fcnt = do_set_elem_get_sampling(info, info->root, info->ccnt, count,
+                                        elem_array);
         for (int i = fcnt - 1; i > 0; i--) {
             int rand_idx = rand() % (i + 1);
             if (rand_idx != i) {
