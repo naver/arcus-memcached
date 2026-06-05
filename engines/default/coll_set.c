@@ -427,7 +427,7 @@ static set_elem_item *do_set_elem_find(set_meta_info *info, const char *val, con
     return elem;
 }
 
-static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_hash_node *node,
+static ENGINE_ERROR_CODE do_set_elem_delete_by_value(set_meta_info *info, set_hash_node *node,
                                                      const int hval, const char *val, const int vlen)
 {
     ENGINE_ERROR_CODE ret;
@@ -436,7 +436,7 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
 
     if (node->hcnt[hidx] == -1) {
         set_hash_node *child_node = node->htab[hidx];
-        ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
+        ret = do_set_elem_delete_by_value(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
             if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                 do_set_node_unlink(info, node, hidx);
@@ -469,7 +469,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete(set_meta_info *info,
     ENGINE_ERROR_CODE ret;
     if (info->root != NULL) {
         int hval = genhash_string_hash(val, vlen);
-        ret = do_set_elem_traverse_delete(info, info->root, hval, val, vlen);
+        ret = do_set_elem_delete_by_value(info, info->root, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
             if (info->root->tot_elem_cnt == 0) {
                 do_set_node_unlink(info, NULL, 0);
