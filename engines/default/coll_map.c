@@ -630,18 +630,6 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
     return ENGINE_SUCCESS;
 }
 
-static uint32_t do_map_elem_delete(map_meta_info *info, const uint32_t count)
-{
-    uint32_t fcnt = 0;
-    if (info->root != NULL) {
-        fcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
-        if (info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(info, NULL, 0);
-        }
-    }
-    return fcnt;
-}
-
 static uint32_t do_map_elem_get(map_meta_info *info,
                                 const int numfields, const field_t *flist,
                                 const bool delete, map_elem_item **elem_array)
@@ -922,7 +910,16 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
 
 uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
 {
-    return do_map_elem_delete(info, count);
+    uint32_t fcnt = 0;
+
+    // cache_lock is held by caller.
+    if (info->root != NULL) {
+        fcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
+        if (info->root->tot_elem_cnt == 0) {
+            do_map_node_unlink(info, NULL, 0);
+        }
+    }
+    return fcnt;
 }
 
 /* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs

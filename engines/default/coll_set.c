@@ -590,18 +590,6 @@ static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *
     return NULL;
 }
 
-static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count)
-{
-    uint32_t fcnt = 0;
-    if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
-        if (info->root->tot_elem_cnt == 0) {
-            do_set_node_unlink(info, NULL, 0);
-        }
-    }
-    return fcnt;
-}
-
 static uint32_t do_set_elem_traverse_rand(set_meta_info *info,
                                           const uint32_t count, const bool delete,
                                           set_elem_item **elem_array)
@@ -934,7 +922,16 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
 
 uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
 {
-    return do_set_elem_delete(info, count);
+    uint32_t fcnt = 0;
+
+    // cache_lock is held by caller
+    if (info->root != NULL) {
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL, ELEM_DELETE_COLL);
+        if (info->root->tot_elem_cnt == 0) {
+            do_set_node_unlink(info, NULL, 0);
+        }
+    }
+    return fcnt;
 }
 
 /* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
