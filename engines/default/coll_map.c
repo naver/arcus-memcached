@@ -526,8 +526,8 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
     return fcnt;
 }
 
-static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int numfields,
-                                              const field_t *flist)
+static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
+                                   const field_t *flist)
 {
     uint32_t delcnt = 0;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
@@ -831,7 +831,7 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        *del_count = do_map_elem_delete_with_field(info, numfields, flist);
+        *del_count = do_map_elem_delete(info, numfields, flist);
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
                 assert(info->root == NULL);
@@ -1172,7 +1172,7 @@ ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_ELEM_ENOENT; break;
         }
 
-        ndeleted = do_map_elem_delete_with_field(info, 1, &flist);
+        ndeleted = do_map_elem_delete(info, 1, &flist);
         if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_INFO, NULL, "map_apply_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u field=%.*s nfield=%u\n",

@@ -463,8 +463,8 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
     return ret;
 }
 
-static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
-                                                       const char *val, const int vlen)
+static ENGINE_ERROR_CODE do_set_elem_delete(set_meta_info *info,
+                                            const char *val, const int vlen)
 {
     ENGINE_ERROR_CODE ret;
     if (info->root != NULL) {
@@ -819,7 +819,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(info, value, nbytes);
+        ret = do_set_elem_delete(info, value, nbytes);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
                 do_item_unlink(it, ITEM_UNLINK_NORMAL);
@@ -1170,7 +1170,7 @@ ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
         }
 
         info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(info, value, nbytes);
+        ret = do_set_elem_delete(info, value, nbytes);
         if (ret == ENGINE_ELEM_ENOENT) {
             logger->log(EXTENSION_LOG_INFO, NULL, "set_apply_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u\n",
