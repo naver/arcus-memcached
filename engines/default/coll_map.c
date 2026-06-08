@@ -291,24 +291,17 @@ static void do_map_elem_replace(map_meta_info *info,
         old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
     }
 
-    old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
-    new_stotal = slabs_space_size(do_map_elem_ntotal(new_elem));
-
-    CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
-
     new_elem->next = old_elem->next;
     if (prev != NULL) {
         prev->next = new_elem;
     } else {
         pinfo->node->htab[pinfo->hidx] = new_elem;
     }
-    new_elem->status = ELEM_STATUS_LINKED;
 
-    old_elem->status = ELEM_STATUS_UNLINKED;
-    if (old_elem->refcount == 0) {
-        do_map_elem_free(old_elem);
-    }
+    CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
 
+    old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
+    new_stotal = slabs_space_size(do_map_elem_ntotal(new_elem));
     if (new_stotal != old_stotal) {
         assert(info->stotal > 0);
         if (new_stotal > old_stotal) {
@@ -316,6 +309,12 @@ static void do_map_elem_replace(map_meta_info *info,
         } else {
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (old_stotal-new_stotal));
         }
+    }
+
+    new_elem->status = ELEM_STATUS_LINKED;
+    old_elem->status = ELEM_STATUS_UNLINKED;
+    if (old_elem->refcount == 0) {
+        do_map_elem_free(old_elem);
     }
 }
 
@@ -397,13 +396,10 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
         hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
     }
 
-    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
-
     elem->next = node->htab[hidx];
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
-    elem->status = ELEM_STATUS_LINKED;
 
     map_hash_node *par_node = info->root;
     while (par_node != node) {
@@ -412,12 +408,14 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
         assert(par_node->hcnt[hidx] == -1);
         par_node = par_node->htab[hidx];
     }
-    info->ccnt++;
 
+    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
+    info->ccnt++;
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
         do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
+    elem->status = ELEM_STATUS_LINKED;
 
     return res;
 }
@@ -429,18 +427,16 @@ static void do_map_elem_unlink(map_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->status = ELEM_STATUS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-    info->ccnt--;
 
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
-
+    info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
-
+    elem->status = ELEM_STATUS_UNLINKED;
     if (elem->refcount == 0) {
         do_map_elem_free(elem);
     }
