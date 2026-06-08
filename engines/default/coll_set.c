@@ -359,7 +359,6 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
-    elem->status = ELEM_STATUS_LINKED;
 
     set_hash_node *par_node = info->root;
     while (par_node != node) {
@@ -368,12 +367,14 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
         assert(par_node->hcnt[hidx] == -1);
         par_node = par_node->htab[hidx];
     }
-    info->ccnt++;
 
+    CLOG_SET_ELEM_INSERT(info, elem);
+    info->ccnt++;
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
         do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
+    elem->status = ELEM_STATUS_LINKED;
 
     return ENGINE_SUCCESS;
 }
@@ -385,18 +386,16 @@ static void do_set_elem_unlink(set_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->status = ELEM_STATUS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-    info->ccnt--;
 
     CLOG_SET_ELEM_DELETE(info, elem, cause);
-
+    info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
-
+    elem->status = ELEM_STATUS_UNLINKED;
     if (elem->refcount == 0) {
         do_set_elem_free(elem);
     }
@@ -724,7 +723,6 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
         return ret;
     }
 
-    CLOG_SET_ELEM_INSERT(info, elem);
     return ENGINE_SUCCESS;
 }
 
