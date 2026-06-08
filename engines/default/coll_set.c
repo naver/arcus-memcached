@@ -315,8 +315,8 @@ static void do_set_node_unlink(set_meta_info *info,
     do_set_node_free(node);
 }
 
-static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem,
-                                          const void *cookie)
+static ENGINE_ERROR_CODE do_set_htree_elem_link(set_meta_info *info, set_elem_item *elem,
+                                                const void *cookie)
 {
     assert(info->root != NULL);
     set_hash_node *node = info->root;
@@ -368,6 +368,15 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
         par_node = par_node->htab[hidx];
     }
 
+    return ENGINE_SUCCESS;
+}
+
+static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem,
+                                          const void *cookie)
+{
+    ENGINE_ERROR_CODE ret = do_set_htree_elem_link(info, elem, cookie);
+    if (ret != ENGINE_SUCCESS) return ret;
+
     CLOG_SET_ELEM_INSERT(info, elem);
     info->ccnt++;
     if (1) { /* apply memory space */
@@ -379,15 +388,22 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     return ENGINE_SUCCESS;
 }
 
-static void do_set_elem_unlink(set_meta_info *info,
-                               set_hash_node *node, const int hidx,
-                               set_elem_item *prev, set_elem_item *elem,
-                               enum elem_delete_cause cause)
+static void do_set_htree_elem_unlink(set_meta_info *info,
+                                     set_hash_node *node, const int hidx,
+                                     set_elem_item *prev, set_elem_item *elem)
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
+}
+
+static void do_set_elem_unlink(set_meta_info *info,
+                               set_hash_node *node, const int hidx,
+                               set_elem_item *prev, set_elem_item *elem,
+                               enum elem_delete_cause cause)
+{
+    do_set_htree_elem_unlink(info, node, hidx, prev, elem);
 
     CLOG_SET_ELEM_DELETE(info, elem, cause);
     info->ccnt--;

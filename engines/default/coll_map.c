@@ -318,9 +318,9 @@ static void do_map_elem_replace(map_meta_info *info,
     }
 }
 
-static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
-                                          const bool replace_if_exist, bool *replaced,
-                                          const void *cookie)
+static ENGINE_ERROR_CODE do_map_htree_elem_link(map_meta_info *info, map_elem_item *elem,
+                                                const bool replace_if_exist, bool *replaced,
+                                                const void *cookie)
 {
     assert(info->root != NULL);
     map_hash_node *node = info->root;
@@ -409,15 +409,37 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
         par_node = par_node->htab[hidx];
     }
 
-    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
-    info->ccnt++;
-    if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
-    }
-    elem->status = ELEM_STATUS_LINKED;
-
     return res;
+}
+
+static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
+                                          const bool replace_if_exist, bool *replaced,
+                                          const void *cookie)
+{
+    ENGINE_ERROR_CODE ret = do_map_htree_elem_link(info, elem, replace_if_exist, replaced, cookie);
+    if (ret != ENGINE_SUCCESS) return ret;
+
+    if (replaced == NULL || !(*replaced)) {
+        CLOG_MAP_ELEM_INSERT(info, NULL, elem);
+        info->ccnt++;
+        if (1) { /* apply memory space */
+            size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
+        }
+        elem->status = ELEM_STATUS_LINKED;
+    }
+
+    return ENGINE_SUCCESS;
+}
+
+static void do_map_htree_elem_unlink(map_meta_info *info,
+                                     map_hash_node *node, const int hidx,
+                                     map_elem_item *prev, map_elem_item *elem)
+{
+    if (prev != NULL) prev->next = elem->next;
+    else              node->htab[hidx] = elem->next;
+    node->hcnt[hidx] -= 1;
+    node->tot_elem_cnt -= 1;
 }
 
 static void do_map_elem_unlink(map_meta_info *info,
@@ -425,10 +447,7 @@ static void do_map_elem_unlink(map_meta_info *info,
                                map_elem_item *prev, map_elem_item *elem,
                                enum elem_delete_cause cause)
 {
-    if (prev != NULL) prev->next = elem->next;
-    else              node->htab[hidx] = elem->next;
-    node->hcnt[hidx] -= 1;
-    node->tot_elem_cnt -= 1;
+    do_map_htree_elem_unlink(info, node, hidx, prev, elem);
 
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
     info->ccnt--;
