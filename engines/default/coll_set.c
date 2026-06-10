@@ -214,7 +214,7 @@ static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cooki
 
         elem->refcount    = 0;
         elem->nbytes      = (uint16_t)nbytes;
-        elem->status = ELEM_STATUS_UNLINKED; /* unlinked state */
+        elem->linked      = 0;
     }
     return elem;
 }
@@ -232,7 +232,7 @@ static void do_set_elem_release(set_elem_item *elem)
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
+    if (elem->refcount == 0 && elem->linked == 0) {
         do_set_elem_free(elem);
     }
 }
@@ -359,7 +359,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
-    elem->status = ELEM_STATUS_LINKED;
+    elem->linked++;
 
     set_hash_node *par_node = info->root;
     while (par_node != node) {
@@ -385,7 +385,7 @@ static void do_set_elem_unlink(set_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->status = ELEM_STATUS_UNLINKED;
+    elem->linked--;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
     info->ccnt--;
@@ -397,6 +397,7 @@ static void do_set_elem_unlink(set_meta_info *info,
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
+    assert(elem->linked == 0);
     if (elem->refcount == 0) {
         do_set_elem_free(elem);
     }
@@ -770,7 +771,7 @@ set_elem_item *set_elem_alloc(const uint32_t nbytes, const void *cookie)
 void set_elem_free(set_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->status == ELEM_STATUS_UNLINKED);
+    assert(elem->linked == 0);
     do_set_elem_free(elem);
     UNLOCK_CACHE();
 }

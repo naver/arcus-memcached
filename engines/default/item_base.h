@@ -141,13 +141,6 @@ enum elem_delete_cause {
 /* collection meta info offset */
 #define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
-
-/* collection element lifecycle status */
-#define ELEM_STATUS_LINKED   1
-#define ELEM_STATUS_UNLINKED 0
-
 /* hash item strtucture */
 typedef struct _hash_item {
     uint16_t refcount;  /* reference count */
@@ -171,7 +164,7 @@ typedef struct _hash_item {
 typedef struct _list_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint8_t  status;              /* element lifecycle state: linked(in-list) or unlinked(removed but referenced) */
+    uint8_t  linked;              /* link count */
     uint16_t reserved;            /* reserved space */
     uint16_t nbytes;              /* the size of the value */
     struct _list_elem_item *next; /* next chain in double linked list */
@@ -183,7 +176,7 @@ typedef struct _list_elem_item {
 typedef struct _set_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint8_t  status;              /* element lifecycle state: linked(in-set) or unlinked(removed but referenced) */
+    uint8_t  linked;              /* link count */
     uint16_t reserved;            /* reserved space */
     uint16_t nbytes;              /* the size of the value */
     struct _set_elem_item *next;  /* hash chain next */
@@ -195,7 +188,7 @@ typedef struct _set_elem_item {
 typedef struct _map_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint8_t  status;              /* element lifecycle state: linked(in-map) or unlinked(removed but referenced) */
+    uint8_t  linked;              /* link count */
     uint8_t  nfield;              /* the size of the field */
     uint8_t  reserved;            /* reserved space */
     uint16_t nbytes;              /* the size of the value */
@@ -208,7 +201,7 @@ typedef struct _map_elem_item {
 typedef struct _btree_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
-    uint8_t  status;             /* element lifecycle state: linked(in-tree) or unlinked(removed but referenced) */
+    uint8_t  linked;             /* link count */
     uint8_t  nbkey;              /* the size of the bkey */
     uint8_t  neflag;             /* the size of the element flag */
     uint16_t nbytes;             /* the size of the value */

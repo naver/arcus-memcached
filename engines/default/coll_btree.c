@@ -284,7 +284,7 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
         assert(elem->slabs_clsid > 0);
 
         elem->refcount    = 0;
-        elem->status      = ELEM_STATUS_UNLINKED; /* unlinked state */
+        elem->linked      = 0;
         elem->nbkey       = (uint8_t)nbkey;
         elem->neflag      = (uint8_t)neflag;
         elem->nbytes      = (uint16_t)nbytes;
@@ -305,7 +305,7 @@ static void do_btree_elem_release(btree_elem_item *elem)
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
+    if (elem->refcount == 0 && elem->linked == 0) {
         do_btree_elem_free(elem);
     }
 }
@@ -1659,9 +1659,9 @@ static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
 
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
 
-    if (elem->refcount > 0) {
-        elem->status = ELEM_STATUS_UNLINKED;
-    } else  {
+    elem->linked--;
+    assert(elem->linked == 0);
+    if (elem->refcount == 0) {
         do_btree_elem_free(elem);
     }
 
@@ -1695,13 +1695,13 @@ static void do_btree_elem_replace(btree_meta_info *info,
 
     CLOG_BTREE_ELEM_INSERT(info, old_elem, new_elem);
 
-    if (old_elem->refcount > 0) {
-        old_elem->status = ELEM_STATUS_UNLINKED;
-    } else  {
+    old_elem->linked--;
+    assert(old_elem->linked == 0);
+    if (old_elem->refcount == 0) {
         do_btree_elem_free(old_elem);
     }
 
-    new_elem->status = ELEM_STATUS_LINKED;
+    new_elem->linked++;
     posi->node->item[posi->indx] = new_elem;
 
     if (new_stotal != old_stotal) { /* apply memory space */
@@ -1841,9 +1841,9 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
         if (node->ndepth == 0) { /* leaf node */
             for (i = 0; i < node->used_count; i++) {
                 elem = (btree_elem_item *)node->item[i];
-                if (elem->refcount > 0) {
-                    elem->status = ELEM_STATUS_UNLINKED;
-                } else {
+                elem->linked--;
+                assert(elem->linked == 0);
+                if (elem->refcount == 0) {
                     do_btree_elem_free(elem);
                 }
             }
@@ -1935,9 +1935,9 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                     tot_space += slabs_space_size(do_btree_elem_ntotal(elem));
 
                     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
-                    if (elem->refcount > 0) {
-                        elem->status = ELEM_STATUS_UNLINKED;
-                    } else {
+                    elem->linked--;
+                    assert(elem->linked == 0);
+                    if (elem->refcount == 0) {
                         do_btree_elem_free(elem);
                     }
                     c_posi.node->item[c_posi.indx] = NULL;
@@ -2234,7 +2234,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
         CLOG_BTREE_ELEM_INSERT(info, NULL, elem);
 
         /* insert the element into the leaf page */
-        elem->status = ELEM_STATUS_LINKED;
+        elem->linked++;
         if (path[0].indx < path[0].node->used_count) {
             for (int i = (path[0].node->used_count-1); i >= path[0].indx; i--) {
                 path[0].node->item[i+1] = path[0].node->item[i];
@@ -2384,7 +2384,8 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                     elem_array[tot_found+cur_found] = elem;
                     if (delete) {
                         tot_space += slabs_space_size(do_btree_elem_ntotal(elem));
-                        elem->status = ELEM_STATUS_UNLINKED;
+                        elem->linked--;
+                        assert(elem->linked == 0);
                         c_posi.node->item[c_posi.indx] = NULL;
                         CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
                     }
@@ -3681,7 +3682,7 @@ btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, c
 void btree_elem_free(btree_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->status == ELEM_STATUS_UNLINKED);
+    assert(elem->linked == 0);
     do_btree_elem_free(elem);
     UNLOCK_CACHE();
 }
