@@ -176,7 +176,7 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
         elem->refcount    = 0;
         elem->nfield      = (uint8_t)nfield;
         elem->nbytes      = (uint16_t)nbytes;
-        elem->status = ELEM_STATUS_UNLINKED; /* unlinked state */
+        elem->linked      = 0;
     }
     return elem;
 }
@@ -194,7 +194,7 @@ static void do_map_elem_release(map_elem_item *elem)
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
+    if (elem->refcount == 0 && elem->linked == 0) {
         do_map_elem_free(elem);
     }
 }
@@ -302,9 +302,10 @@ static void do_map_elem_replace(map_meta_info *info,
     } else {
         pinfo->node->htab[pinfo->hidx] = new_elem;
     }
-    new_elem->status = ELEM_STATUS_LINKED;
+    new_elem->linked++;
 
-    old_elem->status = ELEM_STATUS_UNLINKED;
+    old_elem->linked--;
+    assert(old_elem->linked == 0);
     if (old_elem->refcount == 0) {
         do_map_elem_free(old_elem);
     }
@@ -403,7 +404,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
-    elem->status = ELEM_STATUS_LINKED;
+    elem->linked++;
 
     map_hash_node *par_node = info->root;
     while (par_node != node) {
@@ -429,7 +430,7 @@ static void do_map_elem_unlink(map_meta_info *info,
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
-    elem->status = ELEM_STATUS_UNLINKED;
+    elem->linked--;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
     info->ccnt--;
@@ -441,6 +442,7 @@ static void do_map_elem_unlink(map_meta_info *info,
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
+    assert(elem->linked == 0);
     if (elem->refcount == 0) {
         do_map_elem_free(elem);
     }
@@ -789,7 +791,7 @@ map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes, const voi
 void map_elem_free(map_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->status == ELEM_STATUS_UNLINKED);
+    assert(elem->linked == 0);
     do_map_elem_free(elem);
     UNLOCK_CACHE();
 }

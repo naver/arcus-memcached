@@ -132,7 +132,7 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
 
         elem->refcount    = 0;
         elem->nbytes      = (uint16_t)nbytes;
-        elem->status = ELEM_STATUS_UNLINKED; /* unlinked state */
+        elem->linked      = 0;
     }
     return elem;
 }
@@ -150,7 +150,7 @@ static void do_list_elem_release(list_elem_item *elem)
     if (elem->refcount != 0) {
         elem->refcount--;
     }
-    if (elem->refcount == 0 && elem->status == ELEM_STATUS_UNLINKED) {
+    if (elem->refcount == 0 && elem->linked == 0) {
         do_list_elem_free(elem);
     }
 }
@@ -198,7 +198,7 @@ static ENGINE_ERROR_CODE do_list_elem_link(list_meta_info *info, const int index
     else              prev->next = elem;
     if (next == NULL) info->tail = elem;
     else              next->prev = elem;
-    elem->status = ELEM_STATUS_LINKED;
+    elem->linked++;
     info->ccnt++;
 
     if (1) { /* apply memory space */
@@ -215,7 +215,7 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
     else                    elem->prev->next = elem->next;
     if (elem->next == NULL) info->tail = elem->prev;
     else                    elem->next->prev = elem->prev;
-    elem->status = ELEM_STATUS_UNLINKED;
+    elem->linked--;
     info->ccnt--;
 
     if (info->stotal > 0) { /* apply memory space */
@@ -223,6 +223,7 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
     }
 
+    assert(elem->linked == 0);
     if (elem->refcount == 0) {
         do_list_elem_free(elem);
     }
@@ -388,7 +389,7 @@ list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie)
 void list_elem_free(list_elem_item *elem)
 {
     LOCK_CACHE();
-    assert(elem->status == ELEM_STATUS_UNLINKED);
+    assert(elem->linked == 0);
     do_list_elem_free(elem);
     UNLOCK_CACHE();
 }
