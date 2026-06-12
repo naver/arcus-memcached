@@ -26,8 +26,7 @@
 ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie);
 
-btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes,
-                                  const void *cookie);
+btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes);
 
 void btree_elem_free(btree_elem_item *elem);
 

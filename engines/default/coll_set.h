@@ -26,7 +26,7 @@
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
 
-set_elem_item *set_elem_alloc(const uint32_t nbytes, const void *cookie);
+set_elem_item *set_elem_alloc(const uint32_t nbytes);
 
 void set_elem_free(set_elem_item *elem);
 

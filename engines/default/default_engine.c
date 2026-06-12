@@ -348,7 +348,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    it = item_alloc(key, nkey, flags, exptime, nbytes, cookie);
+    it = item_alloc(key, nkey, flags, exptime, nbytes);
     ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (it != NULL) {
         item_set_cas(it, cas);
@@ -415,7 +415,7 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
-    ret = item_store(it, cas, operation, cookie);
+    ret = item_store(it, cas, operation);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
@@ -479,7 +479,7 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = list_elem_alloc(nbytes, cookie);
+    elem = list_elem_alloc(nbytes);
     ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -587,7 +587,7 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = set_elem_alloc(nbytes, cookie);
+    elem = set_elem_alloc(nbytes);
     ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -711,7 +711,7 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = map_elem_alloc(nfield, nbytes, cookie);
+    elem = map_elem_alloc(nfield, nbytes);
     ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -836,7 +836,7 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = btree_elem_alloc(nbkey, neflag, nbytes, cookie);
+    elem = btree_elem_alloc(nbkey, neflag, nbytes);
     ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;

@@ -360,13 +360,12 @@ void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
 /* item functions */
 bool do_item_isvalid(hash_item *it, rel_time_t current_time);
 
-void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
-                        const void *cookie);
+void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid);
 void  do_item_mem_free(void *item, size_t ntotal);
 
 hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                          const uint32_t flags, const rel_time_t exptime,
-                         const uint32_t nbytes, const void *cookie);
+                         const uint32_t nbytes);
 void       do_item_free(hash_item *it);
 
 ENGINE_ERROR_CODE do_item_link(hash_item *it);

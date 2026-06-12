@@ -73,7 +73,7 @@ static inline void TRYLOCK_CACHE(int ntries)
  *
  * Returns the state of storage.
  */
-static ENGINE_ERROR_CODE do_item_store_set(hash_item *it, uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_set(hash_item *it, uint64_t *cas)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
@@ -96,7 +96,7 @@ static ENGINE_ERROR_CODE do_item_store_set(hash_item *it, uint64_t *cas, const v
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
@@ -120,7 +120,7 @@ static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas, const v
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
@@ -141,7 +141,7 @@ static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas, con
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
@@ -174,8 +174,7 @@ static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas, const v
 }
 
 static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
-                                              ENGINE_STORE_OPERATION operation,
-                                              const void *cookie)
+                                              ENGINE_STORE_OPERATION operation)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
@@ -195,8 +194,7 @@ static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
         /* we have it and old_it here - alloc memory to hold both */
         hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
                                           old_it->flags, old_it->exptime,
-                                          it->nbytes + old_it->nbytes - 2 /* CRLF */,
-                                          cookie);
+                                          it->nbytes + old_it->nbytes - 2 /* CRLF */);
         if (new_it) {
             /* copy data from it and old_it to new_it */
             if (operation == OPERATION_APPEND) {
@@ -235,7 +233,7 @@ static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
  * returns a response string to send back to the client.
  */
 static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int64_t delta,
-                                      uint64_t *rcas, uint64_t *result, const void *cookie)
+                                      uint64_t *rcas, uint64_t *result)
 {
     const char *ptr;
     uint64_t value;
@@ -262,7 +260,7 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
         return ENGINE_EINVAL;
     }
     hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
-                                      it->flags, it->exptime, res, cookie);
+                                      it->flags, it->exptime, res);
     if (new_it == NULL) {
         return ENGINE_ENOMEM;
     }
@@ -281,12 +279,12 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
  */
 hash_item *item_alloc(const void *key, const uint32_t nkey,
                       const uint32_t flags, rel_time_t exptime,
-                      const uint32_t nbytes, const void *cookie)
+                      const uint32_t nbytes)
 {
     hash_item *it;
     LOCK_CACHE();
     /* key can be NULL */
-    it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
+    it = do_item_alloc(key, nkey, flags, exptime, nbytes);
     UNLOCK_CACHE();
     return it;
 }
@@ -319,8 +317,7 @@ void item_release(hash_item *item)
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
  */
 ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
-                             ENGINE_STORE_OPERATION operation,
-                             const void *cookie)
+                             ENGINE_STORE_OPERATION operation)
 {
     ENGINE_ERROR_CODE ret;
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_STORE);
@@ -328,20 +325,20 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
     LOCK_CACHE();
     switch (operation) {
       case OPERATION_SET:
-           ret = do_item_store_set(item, cas, cookie);
+           ret = do_item_store_set(item, cas);
            break;
       case OPERATION_ADD:
-           ret = do_item_store_add(item, cas, cookie);
+           ret = do_item_store_add(item, cas);
            break;
       case OPERATION_REPLACE:
-           ret = do_item_store_replace(item, cas, cookie);
+           ret = do_item_store_replace(item, cas);
            break;
       case OPERATION_CAS:
-           ret = do_item_store_cas(item, cas, cookie);
+           ret = do_item_store_cas(item, cas);
            break;
       case OPERATION_PREPEND:
       case OPERATION_APPEND:
-           ret = do_item_store_attach(item, cas, operation, cookie);
+           ret = do_item_store_attach(item, cas, operation);
            break;
       default:
            ret = ENGINE_NOT_STORED;
@@ -369,7 +366,7 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
         if (IS_COLL_ITEM(it)) {
             ret = ENGINE_EBADTYPE;
         } else {
-            ret = do_add_delta(it, increment, delta, cas, result, cookie);
+            ret = do_add_delta(it, increment, delta, cas, result);
             do_item_release(it);
         }
     } else {
@@ -377,10 +374,10 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n", initial);
 
-            it = do_item_alloc(key, nkey, flags, exptime, len, cookie);
+            it = do_item_alloc(key, nkey, flags, exptime, len);
             if (it) {
                 memcpy((void*)item_get_data(it), buffer, len);
-                ret = do_item_store_add(it, cas, cookie);
+                ret = do_item_store_add(it, cas);
                 if (ret == ENGINE_SUCCESS) {
                     *result = initial;
                 }
@@ -1732,7 +1729,7 @@ ENGINE_ERROR_CODE item_apply_kv_link(void *engine, const char *key, const uint32
 
     LOCK_CACHE();
     old_it = do_item_get(key, nkey, DONT_UPDATE);
-    new_it = do_item_alloc(key, nkey, flags, exptime, nbytes, NULL); /* cookie is NULL */
+    new_it = do_item_alloc(key, nkey, flags, exptime, nbytes);
     if (new_it) {
         /* Assume data is small, and copying with lock held is okay : FIXME */
         memcpy(item_get_data(new_it), value, nbytes);

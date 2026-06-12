@@ -90,14 +90,14 @@ static int32_t do_list_real_maxcount(int32_t maxcount)
 }
 
 static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
-                                     item_attr *attrp, const void *cookie)
+                                     item_attr *attrp)
 {
     uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(list_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
-                                  real_nbytes, cookie);
+                                  real_nbytes);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_LIST;
         it->nbytes = nbytes; /* NOT real_nbytes */
@@ -121,11 +121,11 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *cookie)
+static list_elem_item *do_list_elem_alloc(const uint32_t nbytes)
 {
     size_t ntotal = sizeof(list_elem_item) + nbytes;
 
-    list_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    list_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (elem != NULL) {
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
@@ -278,8 +278,7 @@ static uint32_t do_list_elem_get(list_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
-                                             int index, list_elem_item *elem,
-                                             const void *cookie)
+                                             int index, list_elem_item *elem)
 {
     list_meta_info *info = (list_meta_info *)item_get_meta(it);
     uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_list_size);
@@ -363,7 +362,7 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_list_item_alloc(key, nkey, attrp, cookie);
+        it = do_list_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -377,11 +376,11 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
     return ret;
 }
 
-list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie)
+list_elem_item *list_elem_alloc(const uint32_t nbytes)
 {
     list_elem_item *elem;
     LOCK_CACHE();
-    elem = do_list_elem_alloc(nbytes, cookie);
+    elem = do_list_elem_alloc(nbytes);
     UNLOCK_CACHE();
     return elem;
 }
@@ -422,7 +421,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_list_item_alloc(key, nkey, attrp, cookie);
+        it = do_list_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -433,7 +432,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_list_elem_insert(it, index, elem, cookie);
+        ret = do_list_elem_insert(it, index, elem);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
@@ -683,7 +682,7 @@ ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
-    new_it = do_list_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    new_it = do_list_item_alloc(key, nkey, attrp);
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
@@ -735,7 +734,7 @@ ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
             ret = ENGINE_EINVAL; break;
         }
 
-        elem = do_list_elem_alloc(nbytes, NULL);
+        elem = do_list_elem_alloc(nbytes);
         if (elem == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
                         " element alloc failed. nbytes=%d\n", nbytes);
@@ -743,7 +742,7 @@ ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
         }
         memcpy(elem->value, value, nbytes);
 
-        ret = do_list_elem_insert(it, index, elem, NULL);
+        ret = do_list_elem_insert(it, index, elem);
         if (ret != ENGINE_SUCCESS) {
             do_list_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."

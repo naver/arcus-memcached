@@ -109,14 +109,14 @@ static int32_t do_map_real_maxcount(int32_t maxcount)
 }
 
 static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
-                                    item_attr *attrp, const void *cookie)
+                                    item_attr *attrp)
 {
     uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(map_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
-                                  real_nbytes, cookie);
+                                  real_nbytes);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_MAP;
         it->nbytes = nbytes; /* NOT real_nbytes */
@@ -140,11 +140,11 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
+static map_hash_node *do_map_node_alloc(uint8_t hash_depth)
 {
     size_t ntotal = sizeof(map_hash_node);
 
-    map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (node != NULL) {
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
@@ -164,11 +164,11 @@ static void do_map_node_free(map_hash_node *node)
 }
 
 static map_elem_item *do_map_elem_alloc(const int nfield,
-                                        const uint32_t nbytes, const void *cookie)
+                                        const uint32_t nbytes)
 {
     size_t ntotal = sizeof(map_elem_item) + nfield + nbytes;
 
-    map_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (elem != NULL) {
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
@@ -321,8 +321,7 @@ static void do_map_elem_replace(map_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
-                                          const bool replace_if_exist, bool *replaced,
-                                          const void *cookie)
+                                          const bool replace_if_exist, bool *replaced)
 {
     assert(info->root != NULL);
     map_hash_node *node = info->root;
@@ -387,7 +386,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     }
 
     if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
-        map_hash_node *n_node = do_map_node_alloc(node->hdepth+1, cookie);
+        map_hash_node *n_node = do_map_node_alloc(node->hdepth+1);
         if (n_node == NULL) {
             res = ENGINE_ENOMEM;
             return res;
@@ -640,7 +639,7 @@ static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field
 
 static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
                                             const field_t *field, const char *value,
-                                            const uint32_t nbytes, const void *cookie)
+                                            const uint32_t nbytes)
 {
     map_prev_info  pinfo;
     map_elem_item *elem;
@@ -671,7 +670,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
         }
 #endif
 
-        map_elem_item *new_elem = do_map_elem_alloc(elem->nfield, nbytes, cookie);
+        map_elem_item *new_elem = do_map_elem_alloc(elem->nfield, nbytes);
         if (new_elem == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -720,8 +719,7 @@ static uint32_t do_map_elem_get(map_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
-                                            const bool replace_if_exist, bool *replaced,
-                                            const void *cookie)
+                                            const bool replace_if_exist, bool *replaced)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
     ENGINE_ERROR_CODE ret;
@@ -729,7 +727,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) { /* empty map */
-        map_hash_node *r_node = do_map_node_alloc(0, cookie);
+        map_hash_node *r_node = do_map_node_alloc(0);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -738,7 +736,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     }
 
     /* insert the element */
-    ret = do_map_elem_link(info, elem, replace_if_exist, replaced, cookie);
+    ret = do_map_elem_link(info, elem, replace_if_exist, replaced);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_map_node_unlink(info, NULL, 0);
@@ -765,7 +763,7 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_map_item_alloc(key, nkey, attrp, cookie);
+        it = do_map_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -779,11 +777,11 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
     return ret;
 }
 
-map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes, const void *cookie)
+map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes)
 {
     map_elem_item *elem;
     LOCK_CACHE();
-    elem = do_map_elem_alloc(nfield, nbytes, cookie);
+    elem = do_map_elem_alloc(nfield, nbytes);
     UNLOCK_CACHE();
     return elem;
 }
@@ -825,7 +823,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_map_item_alloc(key, nkey, attrp, cookie);
+        it = do_map_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -836,7 +834,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_map_elem_insert(it, elem, replace_if_exist, replaced, cookie);
+        ret = do_map_elem_insert(it, elem, replace_if_exist, replaced);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
@@ -862,7 +860,7 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        ret = do_map_elem_update(info, field, value, nbytes, cookie);
+        ret = do_map_elem_update(info, field, value, nbytes);
         do_item_release(it);
     }
     UNLOCK_CACHE();
@@ -1065,7 +1063,7 @@ ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint3
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
-    new_it = do_map_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    new_it = do_map_item_alloc(key, nkey, attrp);
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
@@ -1109,7 +1107,7 @@ ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
             ret = ENGINE_KEY_ENOENT; break;
         }
 
-        elem = do_map_elem_alloc(nfield, nbytes, NULL);
+        elem = do_map_elem_alloc(nfield, nbytes);
         if (elem == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."
                         " element alloc failed. nfield=%d nbytes=%d\n", nfield, nbytes);
@@ -1117,7 +1115,7 @@ ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
         }
         memcpy(elem->data, field, nfield + nbytes);
 
-        ret = do_map_elem_insert(it, elem, true /* replace_if_exist */, &replaced, NULL);
+        ret = do_map_elem_insert(it, elem, true /* replace_if_exist */, &replaced);
         if (ret != ENGINE_SUCCESS) {
             do_map_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."

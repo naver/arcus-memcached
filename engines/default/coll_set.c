@@ -149,14 +149,14 @@ static int32_t do_set_real_maxcount(int32_t maxcount)
 }
 
 static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
-                                    item_attr *attrp, const void *cookie)
+                                    item_attr *attrp)
 {
     uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(set_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
-                                  real_nbytes, cookie);
+                                  real_nbytes);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_SET;
         it->nbytes = nbytes; /* NOT real_nbytes */
@@ -180,11 +180,11 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
+static set_hash_node *do_set_node_alloc(uint8_t hash_depth)
 {
     size_t ntotal = sizeof(set_hash_node);
 
-    set_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (node != NULL) {
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
@@ -203,11 +203,11 @@ static void do_set_node_free(set_hash_node *node)
     do_item_mem_free(node, sizeof(set_hash_node));
 }
 
-static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cookie)
+static set_elem_item *do_set_elem_alloc(const uint32_t nbytes)
 {
     size_t ntotal = sizeof(set_elem_item) + nbytes;
 
-    set_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (elem != NULL) {
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
@@ -315,8 +315,7 @@ static void do_set_node_unlink(set_meta_info *info,
     do_set_node_free(node);
 }
 
-static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem,
-                                          const void *cookie)
+static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem)
 {
     assert(info->root != NULL);
     set_hash_node *node = info->root;
@@ -345,7 +344,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     }
 
     if (node->hcnt[hidx] >= SET_MAX_HASHCHAIN_SIZE) {
-        set_hash_node *n_node = do_set_node_alloc(node->hdepth+1, cookie);
+        set_hash_node *n_node = do_set_node_alloc(node->hdepth+1);
         if (n_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -684,8 +683,7 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     return fcnt;
 }
 
-static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
-                                            const void *cookie)
+static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem)
 {
     set_meta_info *info = (set_meta_info *)item_get_meta(it);
     uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_set_size);
@@ -708,7 +706,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) { /* empty set */
-        set_hash_node *r_node = do_set_node_alloc(0, cookie);
+        set_hash_node *r_node = do_set_node_alloc(0);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -717,7 +715,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     }
 
     /* insert the element */
-    ret = do_set_elem_link(info, elem, cookie);
+    ret = do_set_elem_link(info, elem);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_set_node_unlink(info, NULL, 0);
@@ -745,7 +743,7 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_set_item_alloc(key, nkey, attrp, cookie);
+        it = do_set_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -759,11 +757,11 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
     return ret;
 }
 
-set_elem_item *set_elem_alloc(const uint32_t nbytes, const void *cookie)
+set_elem_item *set_elem_alloc(const uint32_t nbytes)
 {
     set_elem_item *elem;
     LOCK_CACHE();
-    elem = do_set_elem_alloc(nbytes, cookie);
+    elem = do_set_elem_alloc(nbytes);
     UNLOCK_CACHE();
     return elem;
 }
@@ -803,7 +801,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_set_item_alloc(key, nkey, attrp, cookie);
+        it = do_set_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -814,7 +812,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_set_elem_insert(it, elem, cookie);
+        ret = do_set_elem_insert(it, elem);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
@@ -1046,7 +1044,7 @@ ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint3
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
-    new_it = do_set_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    new_it = do_set_item_alloc(key, nkey, attrp);
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
@@ -1088,7 +1086,7 @@ ENGINE_ERROR_CODE set_apply_elem_insert(void *engine, hash_item *it,
             ret = ENGINE_KEY_ENOENT; break;
         }
 
-        elem = do_set_elem_alloc(nbytes, NULL);
+        elem = do_set_elem_alloc(nbytes);
         if (elem == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_insert failed."
                         " element alloc failed. nbytes=%d\n", nbytes);
@@ -1096,7 +1094,7 @@ ENGINE_ERROR_CODE set_apply_elem_insert(void *engine, hash_item *it,
         }
         memcpy(elem->value, value, nbytes);
 
-        ret = do_set_elem_insert(it, elem, NULL);
+        ret = do_set_elem_insert(it, elem);
         if (ret != ENGINE_SUCCESS) {
             do_set_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_insert failed."

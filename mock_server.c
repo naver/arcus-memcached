@@ -121,9 +121,7 @@ static void mock_release_independent_stats(void *stats) {
     free(mockstats);
 }
 
-static void mock_count_eviction(const void *cookie, const void *key, const int nkey) {
-    struct mock_connstruct *c = (struct mock_connstruct *)cookie;
-    c->evictions++;
+static void mock_count_eviction(const void *key, const int nkey) {
 }
 
 /**
