@@ -173,7 +173,7 @@ static inline void do_item_stat_reclaim(const unsigned int lruid)
 
 static inline void do_item_stat_evict(const unsigned int lruid,
                                       rel_time_t current_time,
-                                      hash_item *it, const void *cookie)
+                                      hash_item *it)
 {
     itemsp->itemstats[lruid].evicted++;
     itemsp->itemstats[lruid].evicted_time = current_time - it->time;
@@ -183,9 +183,7 @@ static inline void do_item_stat_evict(const unsigned int lruid,
     LOCK_STATS();
     statsp->evictions++;
     UNLOCK_STATS();
-    if (cookie != NULL) {
-        svstat->evicting(cookie, item_get_key(it), it->nkey);
-    }
+    svstat->evicting(item_get_key(it), it->nkey);
 }
 
 static inline void do_item_stat_outofmemory(const unsigned int lruid)
@@ -621,10 +619,10 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 }
 
 static void do_item_evict(hash_item *it, const unsigned int lruid,
-                          rel_time_t current_time, const void *cookie)
+                          rel_time_t current_time)
 {
     /* increment # of evicted */
-    do_item_stat_evict(lruid, current_time, it, cookie);
+    do_item_stat_evict(lruid, current_time, it);
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
@@ -647,8 +645,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
-static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
-                               const void *cookie)
+static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time)
 {
     hash_item *previt;
     hash_item *search;
@@ -667,7 +664,7 @@ static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
         previt = search->prev;
         if (search->refcount == 0) {
             if (do_item_isvalid(search, current_time)) {
-                do_item_evict(search, clsid, current_time, cookie);
+                do_item_evict(search, clsid, current_time);
             } else {
                 do_item_invalidate(search, clsid, true);
             }
@@ -687,8 +684,7 @@ static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
 
 //static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
 //                               const void *cookie)
-void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
-                        const void *cookie)
+void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid)
 {
     hash_item *it = NULL;
 
@@ -728,7 +724,7 @@ void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     if (config->evict_to_free && lruid == LRU_CLSID_FOR_SMALL) {
         int current_ssl = slabs_space_shortage_level();
         if (current_ssl > 0) {
-            (void)do_item_regain(current_ssl, current_time, cookie);
+            (void)do_item_regain(current_ssl, current_time);
         }
     }
 
@@ -839,7 +835,7 @@ void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             previt = search->prev;
             if (search->refcount == 0) {
                 if (do_item_isvalid(search, current_time)) {
-                    do_item_evict(search, lruid, current_time, cookie);
+                    do_item_evict(search, lruid, current_time);
                     it = slabs_alloc(ntotal, clsid_based_on_ntotal);
                 } else {
                     it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
@@ -921,11 +917,11 @@ void do_item_mem_free(void *item, size_t ntotal)
 /*
 static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                                 const uint32_t flags, const rel_time_t exptime,
-                                const uint32_t nbytes, const void *cookie)
+                                const uint32_t nbytes)
 */
 hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                          const uint32_t flags, const rel_time_t exptime,
-                         const uint32_t nbytes, const void *cookie)
+                         const uint32_t nbytes)
 {
     assert(nkey > 0);
     hash_item *it = NULL;
@@ -943,7 +939,7 @@ hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     }
 #endif
 
-    it = do_item_mem_alloc(ntotal, id, cookie);
+    it = do_item_mem_alloc(ntotal, id);
     if (it == NULL)  {
         return NULL;
     }
@@ -1286,7 +1282,7 @@ static void *collection_delete_thread(void *arg)
                 LOCK_CACHE();
                 if (config->evict_to_free) {
                     rel_time_t current_time = svcore->get_current_time();
-                    evict_count = do_item_regain(current_ssl, current_time, NULL);
+                    evict_count = do_item_regain(current_ssl, current_time);
                 }
                 UNLOCK_CACHE();
             }

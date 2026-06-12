@@ -26,7 +26,7 @@
 ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie);
 
-list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie);
+list_elem_item *list_elem_alloc(const uint32_t nbytes);
 
 void list_elem_free(list_elem_item *elem);
 

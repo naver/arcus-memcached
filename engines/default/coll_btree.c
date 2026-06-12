@@ -211,14 +211,14 @@ static int32_t do_btree_real_maxcount(int32_t maxcount)
 }
 
 static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
-                                      item_attr *attrp, const void *cookie)
+                                      item_attr *attrp)
 {
     uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(btree_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
-                                  real_nbytes, cookie);
+                                  real_nbytes);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_BTREE;
         it->nbytes = nbytes; /* NOT real_nbytes */
@@ -247,11 +247,11 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void *cookie)
+static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth)
 {
     size_t ntotal = (node_depth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
 
-    btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (node != NULL) {
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
@@ -274,11 +274,11 @@ static void do_btree_node_free(btree_indx_node *node)
 }
 
 static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
-                                            const uint32_t nbytes, const void *cookie)
+                                            const uint32_t nbytes)
 {
     size_t ntotal = sizeof(btree_elem_item) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
-    btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (elem != NULL) {
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
@@ -1349,8 +1349,7 @@ static void do_btree_node_link(btree_meta_info *info, btree_indx_node *node,
     }
 }
 
-static ENGINE_ERROR_CODE do_btree_node_split(btree_meta_info *info, btree_elem_posi *path,
-                                             const void *cookie)
+static ENGINE_ERROR_CODE do_btree_node_split(btree_meta_info *info, btree_elem_posi *path)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     btree_indx_node *s_node;
@@ -1367,14 +1366,14 @@ static ENGINE_ERROR_CODE do_btree_node_split(btree_meta_info *info, btree_elem_p
             break;
         }
 
-        n_node[btree_depth] = do_btree_node_alloc(btree_depth, cookie);
+        n_node[btree_depth] = do_btree_node_alloc(btree_depth);
         if (n_node[btree_depth] == NULL) {
             ret = ENGINE_ENOMEM; break;
         }
         btree_depth += 1;
         assert(btree_depth < BTREE_MAX_DEPTH);
         if (btree_depth > info->root->ndepth) {
-            btree_indx_node *r_node = do_btree_node_alloc(btree_depth, cookie);
+            btree_indx_node *r_node = do_btree_node_alloc(btree_depth);
             if (r_node == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -1716,8 +1715,7 @@ static void do_btree_elem_replace(btree_meta_info *info,
 static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
                                               const int bkrtype, const bkey_range *bkrange,
                                               const eflag_update *eupdate,
-                                              const char *value, const uint32_t nbytes,
-                                              const void *cookie)
+                                              const char *value, const uint32_t nbytes)
 {
     btree_elem_posi  posi;
     btree_elem_item *elem;
@@ -1779,7 +1777,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
          }
 #endif
 
-        btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, new_neflag, new_nbytes, cookie);
+        btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, new_neflag, new_nbytes);
         if (new_elem == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2191,8 +2189,7 @@ static void do_btree_overflow_trim(btree_meta_info *info,
 
 static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_item *elem,
                                             const bool replace_if_exist, bool *replaced,
-                                            btree_elem_item **trimmed_elems, uint32_t *trimmed_count,
-                                            const void *cookie)
+                                            btree_elem_item **trimmed_elems, uint32_t *trimmed_count)
 {
     btree_elem_posi path[BTREE_MAX_DEPTH];
     int ovfl_type = OVFL_TYPE_NONE;
@@ -2211,7 +2208,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
 
         /* If the leaf node is full of elements, split it ahead. */
         if (path[0].node->used_count >= BTREE_ITEM_COUNT) {
-            res = do_btree_node_split(info, path, cookie);
+            res = do_btree_node_split(info, path);
             if (res != ENGINE_SUCCESS) {
                 return res;
             }
@@ -2533,7 +2530,7 @@ static uint32_t do_btree_elem_count(btree_meta_info *info,
 static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *elem,
                                               const bool replace_if_exist, bool *replaced,
                                               btree_elem_item **trimmed_elems,
-                                              uint32_t *trimmed_count, const void *cookie)
+                                              uint32_t *trimmed_count)
 {
     btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
     ENGINE_ERROR_CODE ret;
@@ -2553,7 +2550,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *el
     /* create the root node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) {
-        btree_indx_node *r_node = do_btree_node_alloc(0, cookie);
+        btree_indx_node *r_node = do_btree_node_alloc(0);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2563,7 +2560,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *el
 
     /* insert the element */
     ret = do_btree_elem_link(info, elem, replace_if_exist, replaced,
-                             trimmed_elems, trimmed_count, cookie);
+                             trimmed_elems, trimmed_count);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_btree_node_unlink(info, info->root, NULL);
@@ -2579,7 +2576,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
                                                   const bool increment, const bool create,
                                                   const uint64_t delta, const uint64_t initial,
                                                   const eflag_t *eflagp,
-                                                  uint64_t *result, const void *cookie)
+                                                  uint64_t *result)
 {
     ENGINE_ERROR_CODE ret;
     btree_elem_item *elem;
@@ -2604,7 +2601,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
 
         elem = do_btree_elem_alloc(bkrange->from_nbkey,
                                    (eflagp == NULL || eflagp->len == EFLAG_NULL ? 0 : eflagp->len),
-                                   nlen, cookie);
+                                   nlen);
         if (elem == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2618,7 +2615,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
             memcpy(elem->data + real_nbkey + eflagp->len, nbuf, nlen);
         }
 
-        ret = do_btree_elem_link(info, elem, false, NULL, NULL, NULL, cookie);
+        ret = do_btree_elem_link(info, elem, false, NULL, NULL, NULL);
         if (ret != ENGINE_SUCCESS) {
             assert(ret != ENGINE_ELEM_EEXISTS);
             /* ENGINE_ENOMEM || ENGINE_BKEYOOR || ENGINE_OVERFLOW */
@@ -2653,7 +2650,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
              * Because, the space difference is negligible.
              */
 #endif
-            btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, elem->neflag, nlen, cookie);
+            btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, elem->neflag, nlen);
             if (new_elem == NULL) {
                 return ENGINE_ENOMEM;
             }
@@ -3655,7 +3652,7 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_btree_item_alloc(key, nkey, attrp, cookie);
+        it = do_btree_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -3669,12 +3666,11 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
     return ret;
 }
 
-btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes,
-                                  const void *cookie)
+btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes)
 {
     btree_elem_item *elem;
     LOCK_CACHE();
-    elem = do_btree_elem_alloc(nbkey, neflag, nbytes, cookie);
+    elem = do_btree_elem_alloc(nbkey, neflag, nbytes);
     UNLOCK_CACHE();
     return elem;
 }
@@ -3722,7 +3718,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_btree_item_alloc(key, nkey, attrp, cookie);
+        it = do_btree_item_alloc(key, nkey, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -3734,7 +3730,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_btree_elem_insert(it, elem, replace_if_exist, replaced,
-                                   trimmed_elems, trimmed_count, cookie);
+                                   trimmed_elems, trimmed_count);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
@@ -3773,7 +3769,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            ret = do_btree_elem_update(info, bkrtype, bkrange, eupdate, value, nbytes, cookie);
+            ret = do_btree_elem_update(info, bkrtype, bkrange, eupdate, value, nbytes);
         } while(0);
         do_item_release(it);
     }
@@ -3856,7 +3852,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
             }
             if (info->root == NULL && create == true) {
                 /* create new root node */
-                btree_indx_node *r_node = do_btree_node_alloc(0, cookie);
+                btree_indx_node *r_node = do_btree_node_alloc(0);
                 if (r_node == NULL) {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -3864,7 +3860,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
                 new_root_flag = true;
             }
             ret = do_btree_elem_arithmetic(info, bkrtype, bkrange, increment, create,
-                                           delta, initial, eflagp, result, cookie);
+                                           delta, initial, eflagp, result);
             if (ret != ENGINE_SUCCESS) {
                 if (new_root_flag) {
                     /* unlink the root node and free it */
@@ -4388,7 +4384,7 @@ ENGINE_ERROR_CODE btree_apply_item_link(void *engine, const char *key, const uin
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
-    new_it = do_btree_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    new_it = do_btree_item_alloc(key, nkey, attrp);
     if (new_it) {
         /* Copy relevent fields in meta info */
         btree_meta_info *info = (btree_meta_info*)item_get_meta(new_it);
@@ -4440,7 +4436,7 @@ ENGINE_ERROR_CODE btree_apply_elem_insert(void *engine, hash_item *it,
             ret = ENGINE_KEY_ENOENT; break;
         }
 
-        elem = do_btree_elem_alloc(nbkey, neflag, nbytes, NULL);
+        elem = do_btree_elem_alloc(nbkey, neflag, nbytes);
         if (elem == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
                         " element alloc failed. nbkey=%d neflag=%d nbytes=%d\n", nbkey, neflag, nbytes);
@@ -4449,7 +4445,7 @@ ENGINE_ERROR_CODE btree_apply_elem_insert(void *engine, hash_item *it,
         memcpy(elem->data, bkey, BTREE_REAL_NBKEY(nbkey) + neflag + nbytes);
 
         ret = do_btree_elem_insert(it, elem, true /* replace_if_exist */,
-                                   &replaced, NULL, NULL, NULL);
+                                   &replaced, NULL, NULL);
         if (ret != ENGINE_SUCCESS) {
             do_btree_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."

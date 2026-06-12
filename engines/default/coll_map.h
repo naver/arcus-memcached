@@ -26,8 +26,7 @@
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
 
-map_elem_item *map_elem_alloc(const int nfield,
-                              const uint32_t nbytes, const void *cookie);
+map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes);
 
 void map_elem_free(map_elem_item *elem);
 

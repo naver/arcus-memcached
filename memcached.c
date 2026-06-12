@@ -15667,7 +15667,7 @@ static void release_independent_stats(void *stats)
     threadlocal_stats_destroy(stats);
 }
 
-static void count_eviction(const void *cookie, const void *key, const int nkey)
+static void count_eviction(const void *key, const int nkey)
 {
     TK(default_topkeys, evictions, key, nkey, get_current_time());
 }
