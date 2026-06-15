@@ -609,12 +609,15 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
     return delcnt;
 }
 
-static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field, map_prev_info *pinfo)
+static map_elem_item *do_map_elem_find(map_meta_info *info,
+                                       const void *key, uint16_t nkey,
+                                       map_prev_info *pinfo)
 {
-    map_elem_item *elem = NULL;
-    map_elem_item *prev = NULL;
-    int hval = genhash_string_hash(field->value, field->length);
-    int hidx = -1;
+    if (info->root == NULL) return NULL;
+
+    map_hash_node *node = info->root;
+    int hval = genhash_string_hash(key, nkey);
+    int hidx;
 
     while (node != NULL) {
         hidx = MAP_GET_HASHIDX(hval, node->hdepth);
@@ -622,9 +625,11 @@ static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field
             break;
         node = node->htab[hidx];
     }
-    assert(node != NULL);
+
+    map_elem_item *prev = NULL;
+    map_elem_item *elem;
     for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
-        if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
+        if (map_hash_eq(hval, key, nkey, elem->hval, elem->data, elem->nfield)) {
             if (pinfo != NULL) {
                 pinfo->node = node;
                 pinfo->prev = prev;
@@ -648,7 +653,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
         return ENGINE_ELEM_ENOENT;
     }
 
-    elem = do_map_elem_find(info->root, field, &pinfo);
+    elem = do_map_elem_find(info, field->value, field->length, &pinfo);
     if (elem == NULL) {
         return ENGINE_ELEM_ENOENT;
     }
