@@ -101,6 +101,11 @@ static bool hash_insert(hash_table *ht, int key)
 /*
  * SET collection manangement
  */
+typedef struct _set_prev_info {
+    set_hash_node *node;
+    set_elem_item *prev;
+    uint16_t       hidx;
+} set_prev_info;
 
 #define SET_GET_HASHIDX(hval, hdepth) \
         (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
@@ -402,28 +407,37 @@ static void do_set_elem_unlink(set_meta_info *info,
     }
 }
 
-static set_elem_item *do_set_elem_find(set_meta_info *info, const char *val, const int vlen)
+static set_elem_item *do_set_elem_find(set_meta_info *info,
+                                       const void *key, uint16_t nkey,
+                                       set_prev_info *pinfo)
 {
-    set_elem_item *elem = NULL;
+    if (info->root == NULL) return NULL;
 
-    if (info->root != NULL) {
-        set_hash_node *node = info->root;
-        int hval = genhash_string_hash(val, vlen);
-        int hidx = 0;
+    set_hash_node *node = info->root;
+    int hval = genhash_string_hash(key, nkey);
+    int hidx;
 
-        while (node != NULL) {
-            hidx = SET_GET_HASHIDX(hval, node->hdepth);
-            if (node->hcnt[hidx] >= 0) /* set element hash chain */
-                break;
-            node = node->htab[hidx];
-        }
-        assert(node != NULL);
-
-        for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
-            if (set_hash_eq(hval, val, vlen, elem->hval, elem->value, elem->nbytes))
-                break;
-        }
+    while (node != NULL) {
+        hidx = SET_GET_HASHIDX(hval, node->hdepth);
+        if (node->hcnt[hidx] >= 0)
+            break;
+        node = node->htab[hidx];
     }
+
+    set_elem_item *prev = NULL;
+    set_elem_item *elem;
+    for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
+        if (set_hash_eq(hval, key, nkey, elem->hval, elem->value, elem->nbytes)) {
+            if (pinfo != NULL) {
+                pinfo->node = node;
+                pinfo->prev = prev;
+                pinfo->hidx = hidx;
+            }
+            break;
+        }
+        prev = elem;
+    }
+
     return elem;
 }
 
@@ -873,7 +887,7 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            if (do_set_elem_find(info, value, nbytes) != NULL)
+            if (do_set_elem_find(info, value, nbytes, NULL) != NULL)
                 *exist = true;
             else
                 *exist = false;
