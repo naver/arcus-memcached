@@ -263,11 +263,6 @@ static void do_map_node_unlink(map_meta_info *info,
         par_node->hcnt[par_hidx] = fcnt;
     }
 
-    if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
-    }
-
     /* free the node */
     do_map_node_free(node);
 }
@@ -392,23 +387,25 @@ static ENGINE_ERROR_CODE do_htree_elem_add(map_meta_info *info, map_elem_item *e
 
 static void do_map_elem_unlink(map_meta_info *info,
                                map_hash_node *node, const int hidx,
-                               map_elem_item *prev, map_elem_item *elem,
-                               enum elem_delete_cause cause)
+                               map_elem_item *prev, map_elem_item *elem)
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
     elem->linked--;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-    info->ccnt--;
+}
 
+static void do_map_elem_delete_post(map_meta_info *info,
+                                    map_elem_item *elem,
+                                    enum elem_delete_cause cause)
+{
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
-
+    info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
-
     assert(elem->linked == 0);
     if (elem->refcount == 0) {
         do_map_elem_free(elem);
@@ -417,7 +414,7 @@ static void do_map_elem_unlink(map_meta_info *info,
 
 static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, const int hval,
                                      const field_t *field, const bool delete,
-                                     map_elem_item **elem_array)
+                                     map_elem_item **elem_array, size_t *space_decreased)
 {
     assert(elem_array != NULL);
     bool ret;
@@ -425,10 +422,11 @@ static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, c
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_get_by_field(info, child_node, hval, field, delete, elem_array);
+        ret = do_map_elem_get_by_field(info, child_node, hval, field, delete, elem_array, space_decreased);
         if (ret && delete) {
             if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(map_hash_node));
             }
             node->tot_elem_cnt -= 1;
         }
@@ -442,7 +440,7 @@ static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, c
                     elem->refcount++;
                     elem_array[0] = elem;
                     if (delete) {
-                        do_map_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
+                        do_map_elem_unlink(info, node, hidx, prev, elem);
                     }
                     ret = true;
                     break;
@@ -455,30 +453,30 @@ static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, c
     return ret;
 }
 
-static bool do_map_elem_delete_by_field(map_meta_info *info, map_hash_node *node, const int hval,
-                                        const field_t *field)
+static map_elem_item *do_map_elem_delete_by_field(map_meta_info *info, map_hash_node *node, const int hval,
+                                                  const field_t *field, size_t *space_decreased)
 {
-    bool ret;
+    map_elem_item *deleted = NULL;
     int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_delete_by_field(info, child_node, hval, field);
-        if (ret) {
+        deleted = do_map_elem_delete_by_field(info, child_node, hval, field, space_decreased);
+        if (deleted) {
             if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(map_hash_node));
             }
             node->tot_elem_cnt -= 1;
         }
     } else {
-        ret = false;
         if (node->hcnt[hidx] > 0) {
             map_elem_item *prev = NULL;
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
-                    do_map_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
-                    ret = true;
+                    do_map_elem_unlink(info, node, hidx, prev, elem);
+                    deleted = elem;
                     break;
                 }
                 prev = elem;
@@ -486,11 +484,11 @@ static bool do_map_elem_delete_by_field(map_meta_info *info, map_hash_node *node
             }
         }
     }
-    return ret;
+    return deleted;
 }
 
 static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
-                               const bool delete, map_elem_item **elem_array)
+                               const bool delete, map_elem_item **elem_array, size_t *space_decreased)
 {
     assert(elem_array != NULL);
     int hidx;
@@ -499,11 +497,12 @@ static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
     for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] == -1) {
             map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
-            int ecnt = do_map_elem_get_all(info, child_node, delete, &elem_array[fcnt]);
+            int ecnt = do_map_elem_get_all(info, child_node, delete, &elem_array[fcnt], space_decreased);
             fcnt += ecnt;
             if (delete) {
                 if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                     do_map_node_unlink(info, node, hidx);
+                    *space_decreased += slabs_space_size(sizeof(map_hash_node));
                 }
                 node->tot_elem_cnt -= ecnt;
             }
@@ -513,7 +512,7 @@ static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
                 elem->refcount++;
                 elem_array[fcnt] = elem;
                 fcnt++;
-                if (delete) do_map_elem_unlink(info, node, hidx, NULL, elem, ELEM_DELETE_NORMAL);
+                if (delete) do_map_elem_unlink(info, node, hidx, NULL, elem);
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
         }
@@ -522,7 +521,8 @@ static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
 }
 
 static int do_map_elem_delete_by_count(map_meta_info *info, map_hash_node *node,
-                                       const uint32_t count, enum elem_delete_cause cause)
+                                       const uint32_t count, map_elem_item **deleted_head,
+                                       size_t *space_decreased)
 {
     int hidx;
     int fcnt = 0;
@@ -531,17 +531,23 @@ static int do_map_elem_delete_by_count(map_meta_info *info, map_hash_node *node,
         if (node->hcnt[hidx] == -1) {
             map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
             int rcnt = (count > 0 ? (count - fcnt) : 0);
-            int ecnt = do_map_elem_delete_by_count(info, child_node, rcnt, cause);
+            int ecnt = do_map_elem_delete_by_count(info, child_node, rcnt, deleted_head, space_decreased);
             fcnt += ecnt;
             if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(map_hash_node));
             }
             node->tot_elem_cnt -= ecnt;
         } else if (node->hcnt[hidx] > 0) {
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 fcnt++;
-                do_map_elem_unlink(info, node, hidx, NULL, elem, cause);
+                do_map_elem_unlink(info, node, hidx, NULL, elem);
+
+                /* link deleted elem into list; returned to caller */
+                elem->next = *deleted_head;
+                *deleted_head = elem;
+
                 if (count > 0 && fcnt >= count) break;
                 elem = node->htab[hidx];
             }
@@ -556,22 +562,42 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
 {
     uint32_t delcnt = 0;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
+    size_t space_decreased = 0;
+    map_elem_item *deleted = NULL;
 
     if (info->root != NULL) {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, cause);
         if (numfields == 0) {
-            delcnt = do_map_elem_delete_by_count(info, info->root, 0, cause);
+            map_elem_item *deleted_head = NULL;
+            delcnt = do_map_elem_delete_by_count(info, info->root, 0, &deleted_head, &space_decreased);
+
+            deleted = deleted_head;
+            while (deleted != NULL) {
+                map_elem_item *next = deleted->next;
+                do_map_elem_delete_post(info, deleted, cause);
+                deleted = next;
+            }
         } else {
             for (int ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-                if (do_map_elem_delete_by_field(info, info->root, hval, &flist[ii])) {
+
+                deleted = do_map_elem_delete_by_field(info, info->root, hval, &flist[ii], &space_decreased);
+                if (deleted != NULL) {
+                    do_map_elem_delete_post(info, deleted, cause);
                     delcnt++;
                 }
             }
         }
+
         if (info->root->tot_elem_cnt == 0) {
             do_map_node_unlink(info, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(map_hash_node));
         }
+
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, space_decreased);
+        }
+
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return delcnt;
@@ -666,25 +692,36 @@ static uint32_t do_map_elem_get(map_meta_info *info,
     assert(info->root);
     uint32_t fcnt = 0;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
+    size_t space_decreased = 0;
 
     if (delete) {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, cause);
     }
     if (numfields == 0) {
-        fcnt = do_map_elem_get_all(info, info->root, delete, elem_array);
+        fcnt = do_map_elem_get_all(info, info->root, delete, elem_array, &space_decreased);
+        if (delete) {
+            for (int ii = 0; ii < fcnt; ii++) {
+                do_map_elem_delete_post(info, elem_array[ii], cause);
+            }
+        }
     } else {
         for (int ii = 0; ii < numfields; ii++) {
             int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
             if (do_map_elem_get_by_field(info, info->root, hval, &flist[ii],
-                                         delete, &elem_array[fcnt])) {
+                                         delete, &elem_array[fcnt], &space_decreased)) {
+                if (delete) do_map_elem_delete_post(info, elem_array[fcnt], cause);
                 fcnt++;
             }
         }
     }
-    if (delete && info->root->tot_elem_cnt == 0) {
-        do_map_node_unlink(info, NULL, 0);
-    }
     if (delete) {
+        if (info->root->tot_elem_cnt == 0) {
+            do_map_node_unlink(info, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(map_hash_node));
+        }
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, space_decreased);
+        }
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return fcnt;
@@ -963,12 +1000,26 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
 uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
 {
     uint32_t fcnt = 0;
+    size_t space_decreased = 0;
 
     // cache_lock is held by caller.
     if (info->root != NULL) {
-        fcnt = do_map_elem_delete_by_count(info, info->root, count, ELEM_DELETE_COLL);
+        map_elem_item *deleted_head = NULL;
+        fcnt = do_map_elem_delete_by_count(info, info->root, count, &deleted_head, &space_decreased);
+
+        map_elem_item *deleted = deleted_head;
+        while (deleted != NULL) {
+            map_elem_item *next = deleted->next;
+            do_map_elem_delete_post(info, deleted, ELEM_DELETE_COLL);
+            deleted = next;
+        }
+
         if (info->root->tot_elem_cnt == 0) {
             do_map_node_unlink(info, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(map_hash_node));
+        }
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, space_decreased);
         }
     }
     return fcnt;
@@ -978,7 +1029,7 @@ void map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
 {
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
     eresult->elem_count = do_map_elem_get_all(info, info->root, false,
-                                              (map_elem_item **)eresult->elem_array);
+                                              (map_elem_item **)eresult->elem_array, NULL);
     assert(eresult->elem_count == info->ccnt);
 }
 
