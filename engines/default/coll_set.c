@@ -306,11 +306,6 @@ static void do_set_node_unlink(set_meta_info *info,
         par_node->hcnt[par_hidx] = fcnt;
     }
 
-    if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
-    }
-
     /* free the node */
     do_set_node_free(node);
 }
@@ -416,85 +411,92 @@ static ENGINE_ERROR_CODE do_htree_elem_insert(set_meta_info *info, set_elem_item
 
 static void do_set_elem_unlink(set_meta_info *info,
                                set_hash_node *node, const int hidx,
-                               set_elem_item *prev, set_elem_item *elem,
-                               enum elem_delete_cause cause)
+                               set_elem_item *prev, set_elem_item *elem)
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
     elem->linked--;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-    info->ccnt--;
+}
 
+static void do_set_elem_delete_post(set_meta_info *info,
+                                    set_elem_item *elem,
+                                    enum elem_delete_cause cause)
+{
     CLOG_SET_ELEM_DELETE(info, elem, cause);
-
+    info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
-
     assert(elem->linked == 0);
     if (elem->refcount == 0) {
         do_set_elem_free(elem);
     }
 }
 
-static ENGINE_ERROR_CODE do_set_elem_delete_by_value(set_meta_info *info, set_hash_node *node,
-                                                     const int hval, const char *val, const int vlen)
+static set_elem_item *do_set_elem_delete_by_value(set_meta_info *info, set_hash_node *node,
+                                                   const int hval, const char *val, const int vlen,
+                                                   size_t *space_decreased)
 {
-    ENGINE_ERROR_CODE ret;
-
+    set_elem_item *deleted = NULL;
     int hidx = SET_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
         set_hash_node *child_node = node->htab[hidx];
-        ret = do_set_elem_delete_by_value(info, child_node, hval, val, vlen);
-        if (ret == ENGINE_SUCCESS) {
+        deleted = do_set_elem_delete_by_value(info, child_node, hval, val, vlen, space_decreased);
+        if (deleted) {
             if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                 do_set_node_unlink(info, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(set_hash_node));
             }
             node->tot_elem_cnt -= 1;
         }
     } else {
-        ret = ENGINE_ELEM_ENOENT;
         if (node->hcnt[hidx] > 0) {
             set_elem_item *prev = NULL;
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
-                if (set_hash_eq(hval, val, vlen, elem->hval, elem->value, elem->nbytes))
+                if (set_hash_eq(hval, val, vlen, elem->hval, elem->value, elem->nbytes)) {
+                    do_set_elem_unlink(info, node, hidx, prev, elem);
+                    deleted = elem;
                     break;
+                }
                 prev = elem;
                 elem = elem->next;
             }
-            if (elem != NULL) {
-                do_set_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
-                ret = ENGINE_SUCCESS;
-            }
         }
     }
-    return ret;
+    return deleted;
 }
 
 static ENGINE_ERROR_CODE do_set_elem_delete(set_meta_info *info,
                                             const char *val, const int vlen)
 {
-    ENGINE_ERROR_CODE ret;
+    ENGINE_ERROR_CODE ret = ENGINE_ELEM_ENOENT;
     if (info->root != NULL) {
         int hval = genhash_string_hash(val, vlen);
-        ret = do_set_elem_delete_by_value(info, info->root, hval, val, vlen);
-        if (ret == ENGINE_SUCCESS) {
+        size_t space_decreased = 0;
+        set_elem_item *deleted = do_set_elem_delete_by_value(info, info->root, hval, val, vlen, &space_decreased);
+        if (deleted != NULL) {
+            do_set_elem_delete_post(info, deleted, ELEM_DELETE_NORMAL);
             if (info->root->tot_elem_cnt == 0) {
                 do_set_node_unlink(info, NULL, 0);
+                space_decreased += slabs_space_size(sizeof(set_hash_node));
             }
+            if (info->stotal > 0 && space_decreased > 0) {
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, space_decreased);
+            }
+            ret = ENGINE_SUCCESS;
         }
-    } else {
-        ret = ENGINE_ELEM_ENOENT;
     }
     return ret;
 }
 
 static int do_set_elem_get_all(set_meta_info *info, set_hash_node *node,
-                               const bool delete, set_elem_item **elem_array)
+                               const bool delete, set_elem_item **elem_array,
+                               size_t *space_decreased)
 {
     assert(elem_array != NULL);
     int hidx;
@@ -503,11 +505,12 @@ static int do_set_elem_get_all(set_meta_info *info, set_hash_node *node,
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] == -1) {
             set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
-            int ecnt = do_set_elem_get_all(info, child_node, delete, &elem_array[fcnt]);
+            int ecnt = do_set_elem_get_all(info, child_node, delete, &elem_array[fcnt], space_decreased);
             fcnt += ecnt;
             if (delete) {
                 if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                     do_set_node_unlink(info, node, hidx);
+                    *space_decreased += slabs_space_size(sizeof(set_hash_node));
                 }
                 node->tot_elem_cnt -= ecnt;
             }
@@ -517,7 +520,7 @@ static int do_set_elem_get_all(set_meta_info *info, set_hash_node *node,
                 elem->refcount++;
                 elem_array[fcnt] = elem;
                 fcnt++;
-                if (delete) do_set_elem_unlink(info, node, hidx, NULL, elem, ELEM_DELETE_NORMAL);
+                if (delete) do_set_elem_unlink(info, node, hidx, NULL, elem);
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
         }
@@ -526,7 +529,8 @@ static int do_set_elem_get_all(set_meta_info *info, set_hash_node *node,
 }
 
 static int do_set_elem_delete_by_count(set_meta_info *info, set_hash_node *node,
-                                       const uint32_t count, enum elem_delete_cause cause)
+                                       const uint32_t count, set_elem_item **deleted_head,
+                                       size_t *space_decreased)
 {
     int hidx;
     int fcnt = 0;
@@ -535,17 +539,23 @@ static int do_set_elem_delete_by_count(set_meta_info *info, set_hash_node *node,
         if (node->hcnt[hidx] == -1) {
             set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
             int rcnt = (count > 0 ? (count - fcnt) : 0);
-            int ecnt = do_set_elem_delete_by_count(info, child_node, rcnt, cause);
+            int ecnt = do_set_elem_delete_by_count(info, child_node, rcnt, deleted_head, space_decreased);
             fcnt += ecnt;
             if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                 do_set_node_unlink(info, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(set_hash_node));
             }
             node->tot_elem_cnt -= ecnt;
         } else if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 fcnt++;
-                do_set_elem_unlink(info, node, hidx, NULL, elem, cause);
+                do_set_elem_unlink(info, node, hidx, NULL, elem);
+
+                /* link deleted elem into list; returned to caller */
+                elem->next = *deleted_head;
+                *deleted_head = elem;
+
                 if (count > 0 && fcnt >= count) break;
                 elem = node->htab[hidx];
             }
@@ -587,7 +597,8 @@ static int do_set_elem_get_sampling(set_meta_info *info, set_hash_node *node,
 }
 
 static set_elem_item *do_set_elem_get_by_offset(set_meta_info *info, set_hash_node *node,
-                                                uint32_t offset, const bool delete)
+                                                uint32_t offset, const bool delete,
+                                                size_t *space_decreased)
 {
     int hidx;
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
@@ -597,10 +608,11 @@ static set_elem_item *do_set_elem_get_by_offset(set_meta_info *info, set_hash_no
                 offset -= child_node->tot_elem_cnt;
                 continue;
             }
-            set_elem_item *found = do_set_elem_get_by_offset(info, child_node, offset, delete);
+            set_elem_item *found = do_set_elem_get_by_offset(info, child_node, offset, delete, space_decreased);
             if (delete) {
                 if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                     do_set_node_unlink(info, node, hidx);
+                    *space_decreased += slabs_space_size(sizeof(set_hash_node));
                 }
                 node->tot_elem_cnt -= 1;
             }
@@ -618,8 +630,7 @@ static set_elem_item *do_set_elem_get_by_offset(set_meta_info *info, set_hash_no
                 offset -= 1;
             }
             elem->refcount++;
-            if (delete) do_set_elem_unlink(info, node, hidx, prev, elem,
-                                           ELEM_DELETE_NORMAL);
+            if (delete) do_set_elem_unlink(info, node, hidx, prev, elem);
             return elem;
         }
     }
@@ -628,7 +639,8 @@ static set_elem_item *do_set_elem_get_by_offset(set_meta_info *info, set_hash_no
 
 static uint32_t do_set_elem_get_rand(set_meta_info *info,
                                      const uint32_t count, const bool delete,
-                                     set_elem_item **elem_array)
+                                     set_elem_item **elem_array,
+                                     size_t *space_decreased)
 {
     assert(elem_array != NULL);
     uint32_t fcnt = 0;
@@ -637,7 +649,7 @@ static uint32_t do_set_elem_get_rand(set_meta_info *info,
         while (fcnt < count) {
             int rand_offset = (rand() % info->ccnt);
             set_elem_item *found = do_set_elem_get_by_offset(info, info->root,
-                                                             rand_offset, delete);
+                                                             rand_offset, delete, space_decreased);
             assert(found != NULL);
             elem_array[fcnt++] = found;
         }
@@ -649,7 +661,7 @@ static uint32_t do_set_elem_get_rand(set_meta_info *info,
             int rand_offset = (rand() % info->ccnt);
             if (hash_insert(&offset_ht, rand_offset)) {
                 set_elem_item *found = do_set_elem_get_by_offset(info, info->root,
-                                                                 rand_offset, delete);
+                                                                 rand_offset, false, NULL);
                 assert(found != NULL);
                 elem_array[fcnt++] = found;
             }
@@ -678,18 +690,26 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     uint32_t fcnt;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
 
+    size_t space_decreased = 0;
     if (delete) {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
     }
     if (count >= info->ccnt || count == 0) { /* Return all */
-        fcnt = do_set_elem_get_all(info, info->root, delete, elem_array);
+        fcnt = do_set_elem_get_all(info, info->root, delete, elem_array, &space_decreased);
     } else { /* Return some */
-        fcnt = do_set_elem_get_rand(info, count, delete, elem_array);
-    }
-    if (delete && info->root->tot_elem_cnt == 0) {
-        do_set_node_unlink(info, NULL, 0);
+        fcnt = do_set_elem_get_rand(info, count, delete, elem_array, &space_decreased);
     }
     if (delete) {
+        for (int ii = 0; ii < fcnt; ii++) {
+            do_set_elem_delete_post(info, elem_array[ii], cause);
+        }
+        if (info->root->tot_elem_cnt == 0) {
+            do_set_node_unlink(info, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(set_hash_node));
+        }
+        if (info->stotal > 0 && space_decreased > 0) {
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, space_decreased);
+        }
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return fcnt;
@@ -955,12 +975,26 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
 uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
 {
     uint32_t fcnt = 0;
+    size_t space_decreased = 0;
 
     // cache_lock is held by caller
     if (info->root != NULL) {
-        fcnt = do_set_elem_delete_by_count(info, info->root, count, ELEM_DELETE_COLL);
+        set_elem_item *deleted_head = NULL;
+        fcnt = do_set_elem_delete_by_count(info, info->root, count, &deleted_head, &space_decreased);
+
+        set_elem_item *deleted = deleted_head;
+        while (deleted != NULL) {
+            set_elem_item *next = deleted->next;
+            do_set_elem_delete_post(info, deleted, ELEM_DELETE_COLL);
+            deleted = next;
+        }
+
         if (info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(info, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(set_hash_node));
+        }
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, space_decreased);
         }
     }
     return fcnt;
@@ -970,7 +1004,7 @@ void set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
 {
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
     eresult->elem_count = do_set_elem_get_all(info, info->root, false,
-                                              (set_elem_item**)(eresult->elem_array));
+                                              (set_elem_item**)(eresult->elem_array), NULL);
     assert(eresult->elem_count == info->ccnt);
 }
 
