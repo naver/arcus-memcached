@@ -57,13 +57,10 @@ static inline void UNLOCK_CACHE(void)
  */
 /* map element previous info internally used */
 typedef struct _map_prev_info {
-    map_hash_node *node;
+    htree_node    *node;
     map_elem_item *prev;
     uint16_t       hidx;
 } map_prev_info;
-
-#define MAP_GET_HASHIDX(hval, hdepth) \
-        (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
 static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
@@ -134,17 +131,17 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
         if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-        info->root    = NULL;
+        info->htree.root = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
 
-static map_hash_node *do_map_node_alloc(uint8_t hash_depth)
+static htree_node *do_map_node_alloc(uint8_t hash_depth)
 {
-    size_t ntotal = sizeof(map_hash_node);
+    size_t ntotal = sizeof(htree_node);
 
-    map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
+    htree_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (node != NULL) {
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
@@ -152,15 +149,15 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth)
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_elem_cnt = 0;
-        memset(node->hcnt, 0, MAP_HASHTAB_SIZE*sizeof(uint16_t));
-        memset(node->htab, 0, MAP_HASHTAB_SIZE*sizeof(void*));
+        memset(node->hcnt, 0, HTREE_HASHTAB_SIZE*sizeof(uint16_t));
+        memset(node->htab, 0, HTREE_HASHTAB_SIZE*sizeof(void*));
     }
     return node;
 }
 
-static void do_map_node_free(map_hash_node *node)
+static void do_map_node_free(htree_node *node)
 {
-    do_item_mem_free(node, sizeof(map_hash_node));
+    do_item_mem_free(node, sizeof(htree_node));
 }
 
 static map_elem_item *do_map_elem_alloc(const int nfield,
@@ -199,19 +196,19 @@ static void do_map_elem_release(map_elem_item *elem)
     }
 }
 
-static void do_map_node_link(map_meta_info *info,
-                             map_hash_node *par_node, const int par_hidx,
-                             map_hash_node *node)
+static void do_map_node_link(htree_meta *htree,
+                             htree_node *par_node, const int par_hidx,
+                             htree_node *node)
 {
     if (par_node == NULL) {
-        info->root = node;
+        htree->root = node;
     } else {
         map_elem_item *elem;
         while (par_node->htab[par_hidx] != NULL) {
             elem = par_node->htab[par_hidx];
             par_node->htab[par_hidx] = elem->next;
 
-            int hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
+            int hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
             elem->next = node->htab[hidx];
             node->htab[hidx] = elem;
             node->hcnt[hidx] += 1;
@@ -223,14 +220,14 @@ static void do_map_node_link(map_meta_info *info,
     }
 }
 
-static void do_map_node_unlink(map_meta_info *info,
-                               map_hash_node *par_node, const int par_hidx)
+static void do_map_node_unlink(htree_meta *htree,
+                               htree_node *par_node, const int par_hidx)
 {
-    map_hash_node *node;
+    htree_node *node;
 
     if (par_node == NULL) {
-        node = info->root;
-        info->root = NULL;
+        node = htree->root;
+        htree->root = NULL;
         assert(node->tot_elem_cnt == 0);
     } else {
         assert(par_node->hcnt[par_hidx] == -1); /* child hash node */
@@ -238,10 +235,10 @@ static void do_map_node_unlink(map_meta_info *info,
         map_elem_item *elem;
         int hidx, fcnt = 0;
 
-        node = (map_hash_node *)par_node->htab[par_hidx];
-        assert(node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2));
+        node = (htree_node *)par_node->htab[par_hidx];
+        assert(node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2));
 
-        for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
+        for (hidx = 0; hidx < HTREE_HASHTAB_SIZE; hidx++) {
             assert(node->hcnt[hidx] >= 0);
             if (node->hcnt[hidx] > 0) {
                 fcnt += node->hcnt[hidx];
@@ -267,20 +264,20 @@ static void do_map_node_unlink(map_meta_info *info,
     do_map_node_free(node);
 }
 
-static map_elem_item *do_map_elem_find(map_meta_info *info,
+static map_elem_item *do_map_elem_find(htree_meta *htree,
                                        const int hval,
                                        const void *key, uint16_t nkey,
                                        map_prev_info *pinfo)
 {
-    if (info->root == NULL) {
+    if (htree->root == NULL) {
         return NULL;
     }
 
-    map_hash_node *node = info->root;
+    htree_node *node = htree->root;
     int hidx;
 
     while (node != NULL) {
-        hidx = MAP_GET_HASHIDX(hval, node->hdepth);
+        hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
         if (node->hcnt[hidx] >= 0) /* map element hash chain */
             break;
         node = node->htab[hidx];
@@ -330,20 +327,20 @@ static map_elem_item *do_htree_elem_replace(map_meta_info *info,
     return old_elem;
 }
 
-static ENGINE_ERROR_CODE do_htree_elem_link(map_meta_info *info,
-                                            map_hash_node *node, int hidx,
+static ENGINE_ERROR_CODE do_htree_elem_link(htree_meta *htree,
+                                            htree_node *node, int hidx,
                                             map_elem_item *elem, size_t *space_increased)
 {
-    if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
-        map_hash_node *n_node = do_map_node_alloc(node->hdepth+1);
+    if (node->hcnt[hidx] >= HTREE_MAX_HASHCHAIN_SIZE) {
+        htree_node *n_node = do_map_node_alloc(node->hdepth+1);
         if (n_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_map_node_link(info, node, hidx, n_node);
-        *space_increased += slabs_space_size(sizeof(map_hash_node));
+        do_map_node_link(htree, node, hidx, n_node);
+        *space_increased += slabs_space_size(sizeof(htree_node));
 
         node = n_node;
-        hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
+        hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
     }
 
     elem->linked++;
@@ -352,41 +349,40 @@ static ENGINE_ERROR_CODE do_htree_elem_link(map_meta_info *info,
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
 
-    map_hash_node *par_node = info->root;
+    htree_node *par_node = htree->root;
     while (par_node != node) {
         par_node->tot_elem_cnt += 1;
-        int par_hidx = MAP_GET_HASHIDX(elem->hval, par_node->hdepth);
+        int par_hidx = HTREE_GET_HASHIDX(elem->hval, par_node->hdepth);
         assert(par_node->hcnt[par_hidx] == -1);
         par_node = par_node->htab[par_hidx];
     }
     return ENGINE_SUCCESS;
 }
 
-static ENGINE_ERROR_CODE do_htree_elem_add(map_meta_info *info, map_elem_item *elem,
+static ENGINE_ERROR_CODE do_htree_elem_add(htree_meta *htree, map_elem_item *elem,
                                            map_prev_info *pinfo, size_t *space_increased)
 {
-    map_hash_node *node;
+    htree_node *node;
     int hidx;
 
-    if (info->root == NULL) {
+    if (htree->root == NULL) {
         node = do_map_node_alloc(0);
         if (node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_map_node_link(info, NULL, 0, node);
-        *space_increased += slabs_space_size(sizeof(map_hash_node));
+        do_map_node_link(htree, NULL, 0, node);
+        *space_increased += slabs_space_size(sizeof(htree_node));
 
-        hidx = MAP_GET_HASHIDX(elem->hval, 0);
-        return do_htree_elem_link(info, node, hidx, elem, space_increased);
+        hidx = HTREE_GET_HASHIDX(elem->hval, 0);
+        return do_htree_elem_link(htree, node, hidx, elem, space_increased);
     }
 
     node = pinfo->node;
     hidx = pinfo->hidx;
-    return do_htree_elem_link(info, node, hidx, elem, space_increased);
+    return do_htree_elem_link(htree, node, hidx, elem, space_increased);
 }
 
-static void do_map_elem_unlink(map_meta_info *info,
-                               map_hash_node *node, const int hidx,
+static void do_map_elem_unlink(htree_node *node, const int hidx,
                                map_elem_item *prev, map_elem_item *elem)
 {
     if (prev != NULL) prev->next = elem->next;
@@ -412,21 +408,21 @@ static void do_map_elem_delete_post(map_meta_info *info,
     }
 }
 
-static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, const int hval,
+static bool do_map_elem_get_by_field(htree_meta *htree, htree_node *node, const int hval,
                                      const field_t *field, const bool delete,
                                      map_elem_item **elem_array, size_t *space_decreased)
 {
     assert(elem_array != NULL);
     bool ret;
-    int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
+    int hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
-        map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_get_by_field(info, child_node, hval, field, delete, elem_array, space_decreased);
+        htree_node *child_node = node->htab[hidx];
+        ret = do_map_elem_get_by_field(htree, child_node, hval, field, delete, elem_array, space_decreased);
         if (ret && delete) {
-            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                do_map_node_unlink(info, node, hidx);
-                *space_decreased += slabs_space_size(sizeof(map_hash_node));
+            if (child_node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2)) {
+                do_map_node_unlink(htree, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(htree_node));
             }
             node->tot_elem_cnt -= 1;
         }
@@ -440,7 +436,7 @@ static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, c
                     elem->refcount++;
                     elem_array[0] = elem;
                     if (delete) {
-                        do_map_elem_unlink(info, node, hidx, prev, elem);
+                        do_map_elem_unlink(node, hidx, prev, elem);
                     }
                     ret = true;
                     break;
@@ -453,19 +449,19 @@ static bool do_map_elem_get_by_field(map_meta_info *info, map_hash_node *node, c
     return ret;
 }
 
-static map_elem_item *do_map_elem_delete_by_field(map_meta_info *info, map_hash_node *node, const int hval,
+static map_elem_item *do_map_elem_delete_by_field(htree_meta *htree, htree_node *node, const int hval,
                                                   const field_t *field, size_t *space_decreased)
 {
     map_elem_item *deleted = NULL;
-    int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
+    int hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
-        map_hash_node *child_node = node->htab[hidx];
-        deleted = do_map_elem_delete_by_field(info, child_node, hval, field, space_decreased);
+        htree_node *child_node = node->htab[hidx];
+        deleted = do_map_elem_delete_by_field(htree, child_node, hval, field, space_decreased);
         if (deleted) {
-            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                do_map_node_unlink(info, node, hidx);
-                *space_decreased += slabs_space_size(sizeof(map_hash_node));
+            if (child_node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2)) {
+                do_map_node_unlink(htree, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(htree_node));
             }
             node->tot_elem_cnt -= 1;
         }
@@ -475,7 +471,7 @@ static map_elem_item *do_map_elem_delete_by_field(map_meta_info *info, map_hash_
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
-                    do_map_elem_unlink(info, node, hidx, prev, elem);
+                    do_map_elem_unlink(node, hidx, prev, elem);
                     deleted = elem;
                     break;
                 }
@@ -487,22 +483,22 @@ static map_elem_item *do_map_elem_delete_by_field(map_meta_info *info, map_hash_
     return deleted;
 }
 
-static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
+static int do_map_elem_get_all(htree_meta *htree, htree_node *node,
                                const bool delete, map_elem_item **elem_array, size_t *space_decreased)
 {
     assert(elem_array != NULL);
     int hidx;
     int fcnt = 0; /* found count */
 
-    for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
+    for (hidx = 0; hidx < HTREE_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] == -1) {
-            map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
-            int ecnt = do_map_elem_get_all(info, child_node, delete, &elem_array[fcnt], space_decreased);
+            htree_node *child_node = (htree_node *)node->htab[hidx];
+            int ecnt = do_map_elem_get_all(htree, child_node, delete, &elem_array[fcnt], space_decreased);
             fcnt += ecnt;
             if (delete) {
-                if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                    do_map_node_unlink(info, node, hidx);
-                    *space_decreased += slabs_space_size(sizeof(map_hash_node));
+                if (child_node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2)) {
+                    do_map_node_unlink(htree, node, hidx);
+                    *space_decreased += slabs_space_size(sizeof(htree_node));
                 }
                 node->tot_elem_cnt -= ecnt;
             }
@@ -512,7 +508,7 @@ static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
                 elem->refcount++;
                 elem_array[fcnt] = elem;
                 fcnt++;
-                if (delete) do_map_elem_unlink(info, node, hidx, NULL, elem);
+                if (delete) do_map_elem_unlink(node, hidx, NULL, elem);
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
         }
@@ -520,29 +516,29 @@ static int do_map_elem_get_all(map_meta_info *info, map_hash_node *node,
     return fcnt;
 }
 
-static int do_map_elem_delete_by_count(map_meta_info *info, map_hash_node *node,
+static int do_map_elem_delete_by_count(htree_meta *htree, htree_node *node,
                                        const uint32_t count, map_elem_item **deleted_head,
                                        size_t *space_decreased)
 {
     int hidx;
     int fcnt = 0;
 
-    for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
+    for (hidx = 0; hidx < HTREE_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] == -1) {
-            map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
+            htree_node *child_node = (htree_node *)node->htab[hidx];
             int rcnt = (count > 0 ? (count - fcnt) : 0);
-            int ecnt = do_map_elem_delete_by_count(info, child_node, rcnt, deleted_head, space_decreased);
+            int ecnt = do_map_elem_delete_by_count(htree, child_node, rcnt, deleted_head, space_decreased);
             fcnt += ecnt;
-            if (child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                do_map_node_unlink(info, node, hidx);
-                *space_decreased += slabs_space_size(sizeof(map_hash_node));
+            if (child_node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2)) {
+                do_map_node_unlink(htree, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(htree_node));
             }
             node->tot_elem_cnt -= ecnt;
         } else if (node->hcnt[hidx] > 0) {
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 fcnt++;
-                do_map_elem_unlink(info, node, hidx, NULL, elem);
+                do_map_elem_unlink(node, hidx, NULL, elem);
 
                 /* link deleted elem into list; returned to caller */
                 elem->next = *deleted_head;
@@ -560,16 +556,17 @@ static int do_map_elem_delete_by_count(map_meta_info *info, map_hash_node *node,
 static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
                                    const field_t *flist)
 {
+    htree_meta *htree = &info->htree;
     uint32_t delcnt = 0;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
     size_t space_decreased = 0;
     map_elem_item *deleted = NULL;
 
-    if (info->root != NULL) {
+    if (htree->root != NULL) {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, cause);
         if (numfields == 0) {
             map_elem_item *deleted_head = NULL;
-            delcnt = do_map_elem_delete_by_count(info, info->root, 0, &deleted_head, &space_decreased);
+            delcnt = do_map_elem_delete_by_count(htree, htree->root, 0, &deleted_head, &space_decreased);
 
             deleted = deleted_head;
             while (deleted != NULL) {
@@ -581,7 +578,7 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
             for (int ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
 
-                deleted = do_map_elem_delete_by_field(info, info->root, hval, &flist[ii], &space_decreased);
+                deleted = do_map_elem_delete_by_field(htree, htree->root, hval, &flist[ii], &space_decreased);
                 if (deleted != NULL) {
                     do_map_elem_delete_post(info, deleted, cause);
                     delcnt++;
@@ -589,9 +586,9 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
             }
         }
 
-        if (info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(info, NULL, 0);
-            space_decreased += slabs_space_size(sizeof(map_hash_node));
+        if (htree->root->tot_elem_cnt == 0) {
+            do_map_node_unlink(htree, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(htree_node));
         }
 
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
@@ -643,15 +640,16 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
                                             const field_t *field, const char *value,
                                             const uint32_t nbytes)
 {
+    htree_meta *htree = &info->htree;
     map_prev_info  pinfo;
     map_elem_item *elem;
 
-    if (info->root == NULL) {
+    if (htree->root == NULL) {
         return ENGINE_ELEM_ENOENT;
     }
 
     int hval = genhash_string_hash(field->value, field->length);
-    elem = do_map_elem_find(info, hval, field->value, field->length, &pinfo);
+    elem = do_map_elem_find(htree, hval, field->value, field->length, &pinfo);
 
     if (elem == NULL) {
         return ENGINE_ELEM_ENOENT;
@@ -689,7 +687,8 @@ static uint32_t do_map_elem_get(map_meta_info *info,
                                 const int numfields, const field_t *flist,
                                 const bool delete, map_elem_item **elem_array)
 {
-    assert(info->root);
+    htree_meta *htree = &info->htree;
+    assert(htree->root);
     uint32_t fcnt = 0;
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
     size_t space_decreased = 0;
@@ -698,7 +697,7 @@ static uint32_t do_map_elem_get(map_meta_info *info,
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, cause);
     }
     if (numfields == 0) {
-        fcnt = do_map_elem_get_all(info, info->root, delete, elem_array, &space_decreased);
+        fcnt = do_map_elem_get_all(htree, htree->root, delete, elem_array, &space_decreased);
         if (delete) {
             for (int ii = 0; ii < fcnt; ii++) {
                 do_map_elem_delete_post(info, elem_array[ii], cause);
@@ -707,7 +706,7 @@ static uint32_t do_map_elem_get(map_meta_info *info,
     } else {
         for (int ii = 0; ii < numfields; ii++) {
             int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-            if (do_map_elem_get_by_field(info, info->root, hval, &flist[ii],
+            if (do_map_elem_get_by_field(htree, htree->root, hval, &flist[ii],
                                          delete, &elem_array[fcnt], &space_decreased)) {
                 if (delete) do_map_elem_delete_post(info, elem_array[fcnt], cause);
                 fcnt++;
@@ -715,9 +714,9 @@ static uint32_t do_map_elem_get(map_meta_info *info,
         }
     }
     if (delete) {
-        if (info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(info, NULL, 0);
-            space_decreased += slabs_space_size(sizeof(map_hash_node));
+        if (htree->root->tot_elem_cnt == 0) {
+            do_map_node_unlink(htree, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(htree_node));
         }
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, space_decreased);
@@ -731,13 +730,14 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
                                             const bool replace_if_exist, bool *replaced)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
+    htree_meta *htree = &info->htree;
     ENGINE_ERROR_CODE ret;
     map_prev_info pinfo;
     map_elem_item *find;
 
     /* map hash value */
     elem->hval = genhash_string_hash(elem->data, elem->nfield);
-    find = do_map_elem_find(info, elem->hval, elem->data, elem->nfield, &pinfo);
+    find = do_map_elem_find(htree, elem->hval, elem->data, elem->nfield, &pinfo);
 
     if (find != NULL) {
         if (!replace_if_exist) {
@@ -766,7 +766,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     }
 
     size_t space_increased = 0;
-    ret = do_htree_elem_add(info, elem, &pinfo, &space_increased);
+    ret = do_htree_elem_add(htree, elem, &pinfo, &space_increased);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -923,7 +923,7 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
         *del_count = do_map_elem_delete(info, numfields, flist);
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
-                assert(info->root == NULL);
+                assert(info->htree.root == NULL);
                 do_item_unlink(it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
@@ -999,13 +999,14 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
 
 uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
 {
+    htree_meta *htree = &info->htree;
     uint32_t fcnt = 0;
     size_t space_decreased = 0;
 
     // cache_lock is held by caller.
-    if (info->root != NULL) {
+    if (htree->root != NULL) {
         map_elem_item *deleted_head = NULL;
-        fcnt = do_map_elem_delete_by_count(info, info->root, count, &deleted_head, &space_decreased);
+        fcnt = do_map_elem_delete_by_count(htree, htree->root, count, &deleted_head, &space_decreased);
 
         map_elem_item *deleted = deleted_head;
         while (deleted != NULL) {
@@ -1014,9 +1015,9 @@ uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
             deleted = next;
         }
 
-        if (info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(info, NULL, 0);
-            space_decreased += slabs_space_size(sizeof(map_hash_node));
+        if (htree->root->tot_elem_cnt == 0) {
+            do_map_node_unlink(htree, NULL, 0);
+            space_decreased += slabs_space_size(sizeof(htree_node));
         }
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, space_decreased);
@@ -1027,8 +1028,9 @@ uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
 
 void map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
 {
+    htree_meta *htree = &info->htree;
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    eresult->elem_count = do_map_elem_get_all(info, info->root, false,
+    eresult->elem_count = do_map_elem_get_all(htree, htree->root, false,
                                               (map_elem_item **)eresult->elem_array, NULL);
     assert(eresult->elem_count == info->ccnt);
 }
