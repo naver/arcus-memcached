@@ -276,6 +276,50 @@ static uint32_t do_htree_elem_delete_bulk(htree_meta *htree, htree_node *node, c
     return fcnt;
 }
 
+static bool do_htree_elem_get(htree_meta *htree, htree_node *node,
+                              const int hval, const void *key, const uint16_t nkey,
+                              const bool delete, htree_elem_item **elem_array,
+                              size_t *space_decreased)
+{
+    assert(elem_array != NULL);
+    bool ret;
+    int hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
+
+    if (node->hcnt[hidx] == -1) {
+        htree_node *child_node = node->htab[hidx];
+        ret = do_htree_elem_get(htree, child_node, hval, key, nkey, delete, elem_array, space_decreased);
+        if (ret && delete) {
+            if (child_node->tot_elem_cnt < (HTREE_MAX_HASHCHAIN_SIZE/2)) {
+                do_htree_node_unlink(htree, node, hidx);
+                *space_decreased += slabs_space_size(sizeof(htree_node));
+            }
+            node->tot_elem_cnt -= 1;
+        }
+    } else {
+        ret = false;
+        if (node->hcnt[hidx] > 0) {
+            htree_elem_item *prev = NULL;
+            htree_elem_item *elem = node->htab[hidx];
+            while (elem != NULL) {
+                uint16_t enkey;
+                const void *ekey = htree->ops->get_key(elem, &enkey);
+                if (htree_hash_eq(hval, key, nkey, elem->hval, ekey, enkey)) {
+                    elem->refcount++;
+                    elem_array[0] = elem;
+                    if (delete) {
+                        do_htree_elem_unlink(node, hidx, prev, elem);
+                    }
+                    ret = true;
+                    break;
+                }
+                prev = elem;
+                elem = elem->next;
+            }
+        }
+    }
+    return ret;
+}
+
 static uint32_t do_htree_elem_get_bulk(htree_meta *htree, htree_node *node, const uint32_t count,
                                        const bool delete, htree_elem_item **elem_array,
                                        size_t *space_decreased)
@@ -584,6 +628,23 @@ uint32_t htree_elem_delete_bulk(htree_meta *htree, htree_node *node, const uint3
     }
 
     return fcnt;
+}
+
+bool htree_elem_get(htree_meta *htree, htree_node *node,
+                    const int hval, const void *key, const uint16_t nkey,
+                    const bool delete, htree_elem_item **elem_array,
+                    size_t *space_decreased)
+{
+    bool ret = do_htree_elem_get(htree, node, hval, key, nkey, delete, elem_array, space_decreased);
+
+    if (delete) {
+        if (ret && htree->root->tot_elem_cnt == 0) {
+            do_htree_node_unlink(htree, NULL, 0);
+            *space_decreased += slabs_space_size(sizeof(htree_node));
+        }
+    }
+
+    return ret;
 }
 
 uint32_t htree_elem_get_bulk(htree_meta *htree, htree_node *node, const uint32_t count,

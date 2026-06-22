@@ -101,6 +101,11 @@ uint32_t htree_elem_delete_bulk(htree_meta *htree, htree_node *node, const uint3
                                 htree_elem_item **deleted_head,
                                 size_t *space_decreased);
 
+bool htree_elem_get(htree_meta *htree, htree_node *node,
+                    const int hval, const void *key, const uint16_t nkey,
+                    const bool delete, htree_elem_item **elem_array,
+                    size_t *space_decreased);
+
 uint32_t htree_elem_get_bulk(htree_meta *htree, htree_node *node, const uint32_t count,
                              const bool delete, htree_elem_item **elem_array,
                              size_t *space_decreased);
