@@ -20,6 +20,18 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#define HTREE_HASHIDX_MASK 0x0000000F
+#define HTREE_MAX_HASHCHAIN_SIZE 64
+
+#define HTREE_GET_HASHIDX(hval, hdepth) \
+        (((hval) & (HTREE_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+
+static inline int htree_hash_eq(const int h1, const void *k1, size_t nkey1,
+                                const int h2, const void *k2, size_t nkey2)
+{
+    return (h1 == h2 && nkey1 == nkey2 && memcmp(k1, k2, nkey1) == 0);
+}
+
 /*
  * Hash table management
  */
