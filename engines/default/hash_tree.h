@@ -88,4 +88,9 @@ htree_elem_item *htree_elem_find(htree_meta *htree,
 ENGINE_ERROR_CODE htree_elem_insert(htree_meta *htree, htree_elem_item *elem,
                                     size_t *space_increased);
 
+ENGINE_ERROR_CODE htree_elem_add(htree_meta *htree, htree_elem_item *elem,
+                                 htree_elem_pos *pos, size_t *space_increased);
+
+htree_elem_item *htree_elem_replace(htree_elem_pos *pos, htree_elem_item *new_elem);
+
 #endif

@@ -172,3 +172,53 @@ ENGINE_ERROR_CODE htree_elem_insert(htree_meta *htree, htree_elem_item *elem,
     hidx = pos.hidx;
     return do_htree_elem_link(htree, node, hidx, elem, space_increased);
 }
+
+ENGINE_ERROR_CODE htree_elem_add(htree_meta *htree, htree_elem_item *elem,
+                                 htree_elem_pos *pos, size_t *space_increased)
+{
+    htree_node *node;
+    int hidx;
+
+    if (htree->root == NULL) {
+        node = do_htree_node_alloc(0);
+        if (node == NULL) {
+            return ENGINE_ENOMEM;
+        }
+        do_htree_node_link(htree, NULL, 0, node);
+        *space_increased += slabs_space_size(sizeof(htree_node));
+
+        hidx = HTREE_GET_HASHIDX(elem->hval, 0);
+        return do_htree_elem_link(htree, node, hidx, elem, space_increased);
+    }
+
+    node = pos->node;
+    hidx = pos->hidx;
+    return do_htree_elem_link(htree, node, hidx, elem, space_increased);
+}
+
+htree_elem_item *htree_elem_replace(htree_elem_pos *pos, htree_elem_item *new_elem)
+{
+    htree_elem_item *prev = pos->prev;
+    htree_elem_item *old_elem;
+    int hidx = pos->hidx;
+
+    if (prev != NULL) {
+        old_elem = prev->next;
+    } else {
+        old_elem = (htree_elem_item *)pos->node->htab[hidx];
+    }
+    assert(new_elem->hval == old_elem->hval);
+
+    new_elem->next = old_elem->next;
+    if (prev != NULL) {
+        prev->next = new_elem;
+    } else {
+        pos->node->htab[hidx] = new_elem;
+    }
+    new_elem->linked++;
+
+    old_elem->linked--;
+    assert(old_elem->linked == 0);
+
+    return old_elem;
+}

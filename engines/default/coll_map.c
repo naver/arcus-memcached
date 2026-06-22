@@ -38,9 +38,6 @@ static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-/* used by set and map collection */
-extern int genhash_string_hash(const void* p, size_t nkey);
-
 /* Cache Lock */
 static inline void LOCK_CACHE(void)
 {
@@ -55,12 +52,14 @@ static inline void UNLOCK_CACHE(void)
 /*
  * MAP collection manangement
  */
-/* map element previous info internally used */
-typedef struct _map_prev_info {
-    htree_node    *node;
-    map_elem_item *prev;
-    uint16_t       hidx;
-} map_prev_info;
+static const void *map_get_key(const htree_elem_item *elem, uint16_t *nkey)
+{
+    map_elem_item *e = (map_elem_item *)elem;
+    *nkey = e->nfield;
+    return e->data;
+}
+
+static htree_ops map_htree_ops = { map_get_key };
 
 static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
@@ -131,28 +130,10 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
         if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-        info->htree.root = NULL;
+        htree_init(&info->htree, &map_htree_ops);
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
-}
-
-static htree_node *do_map_node_alloc(uint8_t hash_depth)
-{
-    size_t ntotal = sizeof(htree_node);
-
-    htree_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
-    if (node != NULL) {
-        node->slabs_clsid = slabs_clsid(ntotal);
-        assert(node->slabs_clsid > 0);
-
-        node->refcount    = 0;
-        node->hdepth      = hash_depth;
-        node->tot_elem_cnt = 0;
-        memset(node->hcnt, 0, HTREE_HASHTAB_SIZE*sizeof(uint16_t));
-        memset(node->htab, 0, HTREE_HASHTAB_SIZE*sizeof(void*));
-    }
-    return node;
 }
 
 static void do_map_node_free(htree_node *node)
@@ -193,30 +174,6 @@ static void do_map_elem_release(map_elem_item *elem)
     }
     if (elem->refcount == 0 && elem->linked == 0) {
         do_map_elem_free(elem);
-    }
-}
-
-static void do_map_node_link(htree_meta *htree,
-                             htree_node *par_node, const int par_hidx,
-                             htree_node *node)
-{
-    if (par_node == NULL) {
-        htree->root = node;
-    } else {
-        map_elem_item *elem;
-        while (par_node->htab[par_hidx] != NULL) {
-            elem = par_node->htab[par_hidx];
-            par_node->htab[par_hidx] = elem->next;
-
-            int hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
-            elem->next = node->htab[hidx];
-            node->htab[hidx] = elem;
-            node->hcnt[hidx] += 1;
-            node->tot_elem_cnt += 1;
-        }
-        assert(node->tot_elem_cnt == par_node->hcnt[par_hidx]);
-        par_node->htab[par_hidx] = node;
-        par_node->hcnt[par_hidx] = -1; /* child hash node */
     }
 }
 
@@ -262,124 +219,6 @@ static void do_map_node_unlink(htree_meta *htree,
 
     /* free the node */
     do_map_node_free(node);
-}
-
-static map_elem_item *do_map_elem_find(htree_meta *htree,
-                                       const int hval,
-                                       const void *key, uint16_t nkey,
-                                       map_prev_info *pinfo)
-{
-    if (htree->root == NULL) {
-        return NULL;
-    }
-
-    htree_node *node = htree->root;
-    int hidx;
-
-    while (node != NULL) {
-        hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
-        if (node->hcnt[hidx] >= 0) /* map element hash chain */
-            break;
-        node = node->htab[hidx];
-    }
-
-    map_elem_item *prev = NULL;
-    map_elem_item *elem;
-    for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
-        if (map_hash_eq(hval, key, nkey, elem->hval, elem->data, elem->nfield)) {
-            break;
-        }
-        prev = elem;
-    }
-
-    if (pinfo != NULL) {
-        pinfo->node = node;
-        pinfo->prev = prev;
-        pinfo->hidx = hidx;
-    }
-    return elem;
-}
-
-static map_elem_item *do_htree_elem_replace(map_meta_info *info,
-                                            map_prev_info *pinfo, map_elem_item *new_elem)
-{
-    map_elem_item *prev = pinfo->prev;
-    map_elem_item *old_elem;
-
-    if (prev != NULL) {
-        old_elem = prev->next;
-    } else {
-        old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
-    }
-    assert(new_elem->hval == old_elem->hval);
-
-    new_elem->next = old_elem->next;
-    if (prev != NULL) {
-        prev->next = new_elem;
-    } else {
-        pinfo->node->htab[pinfo->hidx] = new_elem;
-    }
-    new_elem->linked++;
-
-    old_elem->linked--;
-    assert(old_elem->linked == 0);
-
-    return old_elem;
-}
-
-static ENGINE_ERROR_CODE do_htree_elem_link(htree_meta *htree,
-                                            htree_node *node, int hidx,
-                                            map_elem_item *elem, size_t *space_increased)
-{
-    if (node->hcnt[hidx] >= HTREE_MAX_HASHCHAIN_SIZE) {
-        htree_node *n_node = do_map_node_alloc(node->hdepth+1);
-        if (n_node == NULL) {
-            return ENGINE_ENOMEM;
-        }
-        do_map_node_link(htree, node, hidx, n_node);
-        *space_increased += slabs_space_size(sizeof(htree_node));
-
-        node = n_node;
-        hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
-    }
-
-    elem->linked++;
-    elem->next = node->htab[hidx];
-    node->htab[hidx] = elem;
-    node->hcnt[hidx] += 1;
-    node->tot_elem_cnt += 1;
-
-    htree_node *par_node = htree->root;
-    while (par_node != node) {
-        par_node->tot_elem_cnt += 1;
-        int par_hidx = HTREE_GET_HASHIDX(elem->hval, par_node->hdepth);
-        assert(par_node->hcnt[par_hidx] == -1);
-        par_node = par_node->htab[par_hidx];
-    }
-    return ENGINE_SUCCESS;
-}
-
-static ENGINE_ERROR_CODE do_htree_elem_add(htree_meta *htree, map_elem_item *elem,
-                                           map_prev_info *pinfo, size_t *space_increased)
-{
-    htree_node *node;
-    int hidx;
-
-    if (htree->root == NULL) {
-        node = do_map_node_alloc(0);
-        if (node == NULL) {
-            return ENGINE_ENOMEM;
-        }
-        do_map_node_link(htree, NULL, 0, node);
-        *space_increased += slabs_space_size(sizeof(htree_node));
-
-        hidx = HTREE_GET_HASHIDX(elem->hval, 0);
-        return do_htree_elem_link(htree, node, hidx, elem, space_increased);
-    }
-
-    node = pinfo->node;
-    hidx = pinfo->hidx;
-    return do_htree_elem_link(htree, node, hidx, elem, space_increased);
 }
 
 static void do_map_elem_unlink(htree_node *node, const int hidx,
@@ -600,11 +439,11 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
     return delcnt;
 }
 
-static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, map_prev_info *pinfo,
+static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, htree_elem_pos *pos,
                                              map_elem_item *new_elem)
 {
-    map_elem_item *old_elem = (pinfo->prev != NULL) ? pinfo->prev->next
-                                                    : (map_elem_item *)pinfo->node->htab[pinfo->hidx];
+    map_elem_item *old_elem = (pos->prev != NULL) ? (map_elem_item *)pos->prev->next
+                                                  : (map_elem_item *)pos->node->htab[pos->hidx];
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if (IS_STICKY_COLLFLG(info)) {
@@ -614,7 +453,7 @@ static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, map_prev_info 
         }
     }
 #endif
-    map_elem_item *replaced = do_htree_elem_replace(info, pinfo, new_elem);
+    map_elem_item *replaced = (map_elem_item *)htree_elem_replace(pos, (htree_elem_item *)new_elem);
     assert(replaced == old_elem);
 
     CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
@@ -641,7 +480,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
                                             const uint32_t nbytes)
 {
     htree_meta *htree = &info->htree;
-    map_prev_info  pinfo;
+    htree_elem_pos  pos;
     map_elem_item *elem;
 
     if (htree->root == NULL) {
@@ -649,7 +488,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
     }
 
     int hval = genhash_string_hash(field->value, field->length);
-    elem = do_map_elem_find(htree, hval, field->value, field->length, &pinfo);
+    elem = (map_elem_item *)htree_elem_find(htree, hval, field->value, field->length, &pos);
 
     if (elem == NULL) {
         return ENGINE_ELEM_ENOENT;
@@ -673,7 +512,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
         new_elem->hval = elem->hval;
 
         /* replace the element */
-        ENGINE_ERROR_CODE ret = do_map_elem_replace(info, &pinfo, new_elem);
+        ENGINE_ERROR_CODE ret = do_map_elem_replace(info, &pos, new_elem);
         if (ret != ENGINE_SUCCESS) {
             do_map_elem_free(new_elem);
             return ret;
@@ -732,18 +571,18 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
     htree_meta *htree = &info->htree;
     ENGINE_ERROR_CODE ret;
-    map_prev_info pinfo;
-    map_elem_item *find;
+    htree_elem_pos pos;
+    htree_elem_item *find;
 
     /* map hash value */
     elem->hval = genhash_string_hash(elem->data, elem->nfield);
-    find = do_map_elem_find(htree, elem->hval, elem->data, elem->nfield, &pinfo);
+    find = htree_elem_find(htree, elem->hval, elem->data, elem->nfield, &pos);
 
     if (find != NULL) {
         if (!replace_if_exist) {
             return ENGINE_ELEM_EEXISTS;
         }
-        ENGINE_ERROR_CODE ret = do_map_elem_replace(info, &pinfo, elem);
+        ENGINE_ERROR_CODE ret = do_map_elem_replace(info, &pos, elem);
         if (ret != ENGINE_SUCCESS) {
             return ret;
         }
@@ -766,7 +605,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     }
 
     size_t space_increased = 0;
-    ret = do_htree_elem_add(htree, elem, &pinfo, &space_increased);
+    ret = htree_elem_add(htree, (htree_elem_item *)elem, &pos, &space_increased);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
