@@ -93,4 +93,20 @@ ENGINE_ERROR_CODE htree_elem_add(htree_meta *htree, htree_elem_item *elem,
 
 htree_elem_item *htree_elem_replace(htree_elem_pos *pos, htree_elem_item *new_elem);
 
+htree_elem_item *htree_elem_delete(htree_meta *htree, htree_node *node,
+                                   const int hval, const char *key, const int nkey,
+                                   size_t *space_decreased);
+
+uint32_t htree_elem_delete_bulk(htree_meta *htree, htree_node *node, const uint32_t count,
+                                htree_elem_item **deleted_head,
+                                size_t *space_decreased);
+
+uint32_t htree_elem_get_bulk(htree_meta *htree, htree_node *node, const uint32_t count,
+                             const bool delete, htree_elem_item **elem_array,
+                             size_t *space_decreased);
+
+uint32_t htree_elem_get_rand(htree_meta *htree, const uint32_t ccnt, const uint32_t count,
+                             const bool delete, htree_elem_item **elem_array,
+                             size_t *space_decreased);
+
 #endif
