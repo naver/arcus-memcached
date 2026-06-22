@@ -37,6 +37,8 @@ static inline int htree_hash_eq(const int h1, const void *k1, size_t nkey1,
     return (h1 == h2 && nkey1 == nkey2 && memcmp(k1, k2, nkey1) == 0);
 }
 
+extern int genhash_string_hash(const void* p, size_t nkey);
+
 /* Layout contract for hash-tree elements.
  * Any elem_item used with hash_tree functions must begin with these
  * fields in this exact order. Fields beyond this point may differ. */
@@ -75,5 +77,15 @@ typedef struct {
     htree_elem_item *prev;
     int              hidx;
 } htree_elem_pos;
+
+void htree_init(htree_meta *htree, htree_ops *ops);
+
+htree_elem_item *htree_elem_find(htree_meta *htree,
+                                 const int hval,
+                                 const void *key, uint16_t nkey,
+                                 htree_elem_pos *pos);
+
+ENGINE_ERROR_CODE htree_elem_insert(htree_meta *htree, htree_elem_item *elem,
+                                    size_t *space_increased);
 
 #endif

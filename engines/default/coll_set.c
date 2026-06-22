@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 #include "config.h"
+#include "hash_tree.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -37,9 +38,6 @@
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-
-/* used by set and map collection */
-extern int genhash_string_hash(const void* p, size_t nkey);
 
 /* Cache Lock */
 static inline void LOCK_CACHE(void)
@@ -101,6 +99,15 @@ static bool hash_insert(hash_table *ht, int key)
 /*
  * SET collection manangement
  */
+static const void *set_get_key(const htree_elem_item *elem, uint16_t *nkey)
+{
+    set_elem_item *e = (set_elem_item *)elem;
+    *nkey = e->nbytes;
+    return e->value;
+}
+
+static htree_ops set_htree_ops = { set_get_key };
+
 typedef struct _set_prev_info {
     htree_node *node;
     set_elem_item *prev;
@@ -176,28 +183,10 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
         if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-        info->htree.root    = NULL;
+        htree_init(&info->htree, &set_htree_ops);
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
-}
-
-static htree_node *do_set_node_alloc(uint8_t hash_depth)
-{
-    size_t ntotal = sizeof(htree_node);
-
-    htree_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
-    if (node != NULL) {
-        node->slabs_clsid = slabs_clsid(ntotal);
-        assert(node->slabs_clsid > 0);
-
-        node->refcount    = 0;
-        node->hdepth      = hash_depth;
-        node->tot_elem_cnt = 0;
-        memset(node->hcnt, 0, HTREE_HASHTAB_SIZE*sizeof(uint16_t));
-        memset(node->htab, 0, HTREE_HASHTAB_SIZE*sizeof(void*));
-    }
-    return node;
 }
 
 static void do_set_node_free(htree_node *node)
@@ -236,30 +225,6 @@ static void do_set_elem_release(set_elem_item *elem)
     }
     if (elem->refcount == 0 && elem->linked == 0) {
         do_set_elem_free(elem);
-    }
-}
-
-static void do_set_node_link(htree_meta *htree,
-                             htree_node *par_node, const int par_hidx,
-                             htree_node *node)
-{
-    if (par_node == NULL) {
-        htree->root = node;
-    } else {
-        set_elem_item *elem;
-        while (par_node->htab[par_hidx] != NULL) {
-            elem = par_node->htab[par_hidx];
-            par_node->htab[par_hidx] = elem->next;
-
-            int hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
-            elem->next = node->htab[hidx];
-            node->htab[hidx] = elem;
-            node->hcnt[hidx] += 1;
-            node->tot_elem_cnt += 1;
-        }
-        assert(node->tot_elem_cnt == par_node->hcnt[par_hidx]);
-        par_node->htab[par_hidx] = node;
-        par_node->hcnt[par_hidx] = -1; /* child hash node */
     }
 }
 
@@ -305,105 +270,6 @@ static void do_set_node_unlink(htree_meta *htree,
 
     /* free the node */
     do_set_node_free(node);
-}
-
-static set_elem_item *do_set_elem_find(htree_meta *htree,
-                                       const int hval,
-                                       const void *key, uint16_t nkey,
-                                       set_prev_info *pinfo)
-{
-    if (htree->root == NULL) {
-        return NULL;
-    }
-
-    htree_node *node = htree->root;
-    int hidx;
-
-    while (node != NULL) {
-        hidx = HTREE_GET_HASHIDX(hval, node->hdepth);
-        if (node->hcnt[hidx] >= 0)
-            break;
-        node = node->htab[hidx];
-    }
-
-    set_elem_item *prev = NULL;
-    set_elem_item *elem;
-    for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
-        if (set_hash_eq(hval, key, nkey, elem->hval, elem->value, elem->nbytes))
-            break;
-        prev = elem;
-    }
-
-    if (pinfo != NULL) {
-        pinfo->node = node;
-        pinfo->prev = prev;
-        pinfo->hidx = hidx;
-    }
-
-    return elem;
-}
-
-static ENGINE_ERROR_CODE do_htree_elem_link(htree_meta *htree,
-                                            htree_node *node, int hidx,
-                                            set_elem_item *elem, size_t *space_increased)
-{
-    if (node->hcnt[hidx] >= HTREE_MAX_HASHCHAIN_SIZE) {
-        htree_node *n_node = do_set_node_alloc(node->hdepth+1);
-        if (n_node == NULL) {
-            return ENGINE_ENOMEM;
-        }
-        do_set_node_link(htree, node, hidx, n_node);
-        *space_increased += slabs_space_size(sizeof(htree_node));
-
-        node = n_node;
-        hidx = HTREE_GET_HASHIDX(elem->hval, node->hdepth);
-    }
-
-    elem->linked++;
-    elem->next = node->htab[hidx];
-    node->htab[hidx] = elem;
-    node->hcnt[hidx] += 1;
-    node->tot_elem_cnt += 1;
-
-    htree_node *par_node = htree->root;
-    while (par_node != node) {
-        par_node->tot_elem_cnt += 1;
-        int par_hidx = HTREE_GET_HASHIDX(elem->hval, par_node->hdepth);
-        assert(par_node->hcnt[par_hidx] == -1);
-        par_node = par_node->htab[par_hidx];
-    }
-    return ENGINE_SUCCESS;
-}
-
-static ENGINE_ERROR_CODE do_htree_elem_insert(htree_meta *htree, set_elem_item *elem,
-                                              size_t *space_increased)
-{
-    htree_node *node;
-    int hidx;
-    /* create the root hash node if it does not exist */
-    if (htree->root == NULL) {
-        node = do_set_node_alloc(0);
-        if (node == NULL) {
-            return ENGINE_ENOMEM;
-        }
-        do_set_node_link(htree, NULL, 0, node);
-        *space_increased += slabs_space_size(sizeof(htree_node));
-
-        hidx = HTREE_GET_HASHIDX(elem->hval, 0);
-        return do_htree_elem_link(htree, node, hidx, elem, space_increased);
-    }
-
-    set_elem_item *find;
-    set_prev_info pinfo;
-
-    find = do_set_elem_find(htree, elem->hval, elem->value, elem->nbytes, &pinfo);
-    if (find != NULL) {
-        return ENGINE_ELEM_EEXISTS;
-    }
-
-    node = pinfo.node;
-    hidx = pinfo.hidx;
-    return do_htree_elem_link(htree, node, hidx, elem, space_increased);
 }
 
 static void do_set_elem_unlink(htree_node *node, const int hidx,
@@ -738,7 +604,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem)
     }
 
     size_t space_increased = 0;
-    ret = do_htree_elem_insert(&info->htree, elem, &space_increased);
+    ret = htree_elem_insert(&info->htree, (htree_elem_item *)elem, &space_increased);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -900,7 +766,7 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
                 ret = ENGINE_UNREADABLE; break;
             }
             int hval = genhash_string_hash(value, nbytes);
-            if (do_set_elem_find(&info->htree, hval, value, nbytes, NULL) != NULL)
+            if (htree_elem_find(&info->htree, hval, value, nbytes, NULL) != NULL)
                 *exist = true;
             else
                 *exist = false;
