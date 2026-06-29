@@ -317,7 +317,8 @@ void item_release(hash_item *item)
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
  */
 ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
-                             ENGINE_STORE_OPERATION operation)
+                             ENGINE_STORE_OPERATION operation,
+                             const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_STORE);

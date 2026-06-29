@@ -119,7 +119,8 @@ void item_release(hash_item *it);
  *       there so that we can get it from the item instead?
  */
 ENGINE_ERROR_CODE item_store(hash_item *item,
-                             uint64_t *cas, ENGINE_STORE_OPERATION operation);
+                             uint64_t *cas, ENGINE_STORE_OPERATION operation,
+                             const void *cookie);
 
 ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
                                   const bool increment,
