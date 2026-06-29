@@ -415,7 +415,7 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
-    ret = item_store(it, cas, operation);
+    ret = item_store(it, cas, operation, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
