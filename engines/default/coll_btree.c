@@ -4589,6 +4589,34 @@ ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
     return ret;
 }
 
+void btree_traverse_init(coll_meta_info *info, void *posi)
+{
+    btree_elem_posi *bp = (btree_elem_posi *)posi;
+    btree_indx_node *node = ((btree_meta_info *)info)->root;
+    if (node == NULL || node->used_count == 0) {
+        bp->node = NULL;
+        return;
+    }
+    bp->node = do_btree_get_first_leaf(node, NULL);
+    bp->indx = 0;
+}
+
+uint32_t btree_traverse_next(void *posi, void **elem_array, uint32_t count)
+{
+    btree_elem_posi *bp = (btree_elem_posi *)posi;
+    uint32_t fcnt = 0;
+    while (fcnt < count && bp->node != NULL) {
+        btree_elem_item *elem = BTREE_GET_ELEM_ITEM(bp->node, bp->indx);
+        elem->refcount++;
+        elem_array[fcnt++] = elem;
+        if (++bp->indx >= bp->node->used_count) {
+            bp->node = bp->node->next;
+            bp->indx = 0;
+        }
+    }
+    return fcnt;
+}
+
 /*
  * External Functions
  */

@@ -73,6 +73,9 @@ ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
                                         const char *field, const uint32_t nfield,
                                         const bool drop_if_empty);
 
+void map_traverse_init(coll_meta_info *info, void *posi);
+uint32_t map_traverse_next(void *posi, void **elem_array, uint32_t count);
+
 ENGINE_ERROR_CODE item_map_coll_init(void *engine_ptr);
 void item_map_coll_final(void *engine_ptr);
 

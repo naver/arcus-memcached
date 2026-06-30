@@ -101,6 +101,19 @@ static bool hash_insert(hash_table *ht, int key)
 /*
  * SET collection manangement
  */
+#define SET_MAX_DEPTH 8  /* 32-bit hash, 4bits per level */
+
+typedef struct {
+    set_hash_node *node;
+    int            hidx;
+} set_path_entry;
+
+typedef struct {
+    set_elem_item *curr;
+    set_path_entry path[SET_MAX_DEPTH];
+    int            depth;
+} set_elem_posi;
+
 typedef struct _set_prev_info {
     set_hash_node *node;
     set_elem_item *prev;
@@ -754,6 +767,30 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem)
     return ENGINE_SUCCESS;
 }
 
+static void do_set_traverse_advance(set_elem_posi *posi)
+{
+    while (posi->depth >= 0) {
+        set_hash_node *node = posi->path[posi->depth].node;
+        int hidx;
+
+        for (hidx = posi->path[posi->depth].hidx; hidx < SET_HASHTAB_SIZE; hidx++) {
+            if (node->hcnt[hidx] == -1) {
+                posi->path[posi->depth].hidx = hidx + 1;
+                posi->depth++;
+                posi->path[posi->depth].node = (set_hash_node *)node->htab[hidx];
+                posi->path[posi->depth].hidx = 0;
+                break;
+            } else if (node->hcnt[hidx] > 0) {
+                posi->path[posi->depth].hidx = hidx + 1;
+                posi->curr = (set_elem_item *)node->htab[hidx];
+                return;
+            }
+        }
+        if (hidx >= SET_HASHTAB_SIZE) posi->depth--;
+    }
+    posi->curr = NULL;
+}
+
 /*
  * SET Interface Functions
  */
@@ -1193,6 +1230,34 @@ ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
     UNLOCK_CACHE();
 
     return ret;
+}
+
+void set_traverse_init(coll_meta_info *info, void *posi)
+{
+    set_elem_posi *sp = (set_elem_posi *)posi;
+    if (((set_meta_info *)info)->root == NULL) {
+        sp->curr = NULL;
+        return;
+    }
+    sp->path[0].node = ((set_meta_info *)info)->root;
+    sp->path[0].hidx = 0;
+    sp->depth = 0;
+    do_set_traverse_advance(sp);
+}
+
+uint32_t set_traverse_next(void *posi, void **elem_array, uint32_t count)
+{
+    set_elem_posi *sp = (set_elem_posi *)posi;
+    uint32_t fcnt = 0;
+    while (fcnt < count && sp->curr != NULL) {
+        sp->curr->refcount++;
+        elem_array[fcnt++] = sp->curr;
+        if (sp->curr->next != NULL)
+            sp->curr = sp->curr->next;
+        else
+            do_set_traverse_advance(sp);
+    }
+    return fcnt;
 }
 
 /*

@@ -71,6 +71,9 @@ ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
                                         const char *value, const uint32_t nbytes,
                                         const bool drop_if_empty);
 
+void set_traverse_init(coll_meta_info *info, void *posi);
+uint32_t set_traverse_next(void *posi, void **elem_array, uint32_t count);
+
 ENGINE_ERROR_CODE item_set_coll_init(void *engine_ptr);
 void item_set_coll_final(void *engine_ptr);
 

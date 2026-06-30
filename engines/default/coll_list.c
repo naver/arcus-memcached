@@ -52,6 +52,10 @@ static inline void UNLOCK_CACHE(void)
 /*
  * LIST collection management
  */
+typedef struct {
+    list_elem_item *curr;
+} list_elem_posi;
+
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
@@ -808,6 +812,24 @@ ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
     UNLOCK_CACHE();
 
     return ret;
+}
+
+void list_traverse_init(coll_meta_info *info, void *posi)
+{
+    list_elem_posi *lp = (list_elem_posi *)posi;
+    lp->curr = ((list_meta_info *)info)->head;
+}
+
+uint32_t list_traverse_next(void *posi, void **elem_array, uint32_t count)
+{
+    list_elem_posi *lp = (list_elem_posi *)posi;
+    uint32_t fcnt = 0;
+    while (fcnt < count && lp->curr != NULL) {
+        lp->curr->refcount++;
+        elem_array[fcnt++] = lp->curr;
+        lp->curr = lp->curr->next;
+    }
+    return fcnt;
 }
 
 /*

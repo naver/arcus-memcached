@@ -55,6 +55,19 @@ static inline void UNLOCK_CACHE(void)
 /*
  * MAP collection manangement
  */
+#define MAP_MAX_DEPTH 8  /* 32-bit hash, 4bits per level */
+
+typedef struct {
+    map_hash_node *node;
+    int            hidx;
+} map_path_entry;
+
+typedef struct {
+    map_elem_item *curr;
+    map_path_entry path[MAP_MAX_DEPTH];
+    int            depth;
+} map_elem_posi;
+
 /* map element previous info internally used */
 typedef struct _map_prev_info {
     map_hash_node *node;
@@ -781,6 +794,30 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     return ENGINE_SUCCESS;
 }
 
+static void do_map_traverse_advance(map_elem_posi *posi)
+{
+    while (posi->depth >= 0) {
+        map_hash_node *node = posi->path[posi->depth].node;
+        int hidx;
+
+        for (hidx = posi->path[posi->depth].hidx; hidx < MAP_HASHTAB_SIZE; hidx++) {
+            if (node->hcnt[hidx] == -1) {
+                posi->path[posi->depth].hidx = hidx + 1;
+                posi->depth++;
+                posi->path[posi->depth].node = (map_hash_node *)node->htab[hidx];
+                posi->path[posi->depth].hidx = 0;
+                break;
+            } else if (node->hcnt[hidx] > 0) {
+                posi->path[posi->depth].hidx = hidx + 1;
+                posi->curr = (map_elem_item *)node->htab[hidx];
+                return;
+            }
+        }
+        if (hidx >= MAP_HASHTAB_SIZE) posi->depth--;
+    }
+    posi->curr = NULL;
+}
+
 /*
  * MAP Interface Functions
  */
@@ -1232,6 +1269,34 @@ ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
     UNLOCK_CACHE();
 
     return ret;
+}
+
+void map_traverse_init(coll_meta_info *info, void *posi)
+{
+    map_elem_posi *mp = (map_elem_posi *)posi;
+    if (((map_meta_info *)info)->root == NULL) {
+        mp->curr = NULL;
+        return;
+    }
+    mp->path[0].node = ((map_meta_info *)info)->root;
+    mp->path[0].hidx = 0;
+    mp->depth = 0;
+    do_map_traverse_advance(mp);
+}
+
+uint32_t map_traverse_next(void *posi, void **elem_array, uint32_t count)
+{
+    map_elem_posi *mp = (map_elem_posi *)posi;
+    uint32_t fcnt = 0;
+    while (fcnt < count && mp->curr != NULL) {
+        mp->curr->refcount++;
+        elem_array[fcnt++] = mp->curr;
+        if (mp->curr->next != NULL)
+            mp->curr = mp->curr->next;
+        else
+            do_map_traverse_advance(mp);
+    }
+    return fcnt;
 }
 
 /*
