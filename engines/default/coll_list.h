@@ -69,6 +69,9 @@ ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
                                          const int nelems, const int index,
                                          const int count, const bool drop_if_empty);
 
+void list_traverse_init(coll_meta_info *info, void *posi);
+uint32_t list_traverse_next(void *posi, void **elem_array, uint32_t count);
+
 ENGINE_ERROR_CODE item_list_coll_init(void *engine_ptr);
 void item_list_coll_final(void *engine_ptr);
 

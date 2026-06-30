@@ -123,6 +123,9 @@ ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
                                                   const uint32_t offset, const uint32_t count,
                                                   const bool drop_if_empty);
 
+void btree_traverse_init(coll_meta_info *info, void *posi);
+uint32_t btree_traverse_next(void *posi, void **elem_array, uint32_t count);
+
 ENGINE_ERROR_CODE item_btree_coll_init(void *engine_ptr);
 void item_btree_coll_final(void *engine_ptr);
 
