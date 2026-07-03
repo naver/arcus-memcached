@@ -78,17 +78,6 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                                   struct elems_result *eresult);
 
 #ifdef SUPPORT_BOP_SMGET
-#ifdef JHPARK_OLD_SMGET_INTERFACE
-/* smget old interface */
-ENGINE_ERROR_CODE btree_elem_smget_old(token_t *key_array, const int key_count,
-                                   const bkey_range *bkrange, const eflag_filter *efilter,
-                                   const uint32_t offset, const uint32_t count,
-                                   btree_elem_item **elem_array, uint32_t *kfnd_array,
-                                   uint32_t *flag_array, uint32_t *elem_count,
-                                   uint32_t *missed_key_array, uint32_t *missed_key_count,
-                                   bool *trimmed, bool *duplicated);
-#endif
-
 /* smget new interface */
 ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,

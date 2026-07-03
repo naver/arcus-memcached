@@ -38,7 +38,6 @@ struct iovec {
 //#define NEW_PREFIX_STATS_MANAGEMENT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
-#define JHPARK_OLD_SMGET_INTERFACE
 #define MULTI_NOTIFY_IO_COMPLETE
 
 /** Maximum length of a prefix */
