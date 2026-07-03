@@ -18,6 +18,7 @@
 #ifndef ITEM_BASE_H
 #define ITEM_BASE_H
 
+#include "hash_tree.h"
 #include <memcached/engine.h>
 #include <memcached/util.h>
 #include <memcached/visibility.h>
@@ -225,15 +226,6 @@ typedef struct _list_meta_info {
 #define SET_HASHIDX_MASK 0x0000000F
 #define SET_MAX_HASHCHAIN_SIZE 64
 
-typedef struct _set_hash_node {
-    uint16_t refcount;
-    uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint8_t  hdepth;
-    uint32_t tot_elem_cnt;
-    int16_t  hcnt[SET_HASHTAB_SIZE];
-    void    *htab[SET_HASHTAB_SIZE];
-} set_hash_node;
-
 typedef struct _set_meta_info {
     int32_t  mcnt;      /* maximum count */
     int32_t  ccnt;      /* current count */
@@ -241,22 +233,13 @@ typedef struct _set_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-    set_hash_node *root;
+    htree_meta htree;
 } set_meta_info;
 
 /* map meta info */
 #define MAP_HASHTAB_SIZE 16
 #define MAP_HASHIDX_MASK 0x0000000F
 #define MAP_MAX_HASHCHAIN_SIZE 64
-
-typedef struct _map_hash_node {
-    uint16_t refcount;
-    uint8_t  slabs_clsid;         /* which slab class we're in */
-    uint8_t  hdepth;
-    uint32_t tot_elem_cnt;
-    int16_t  hcnt[MAP_HASHTAB_SIZE];
-    void    *htab[MAP_HASHTAB_SIZE];
-} map_hash_node;
 
 typedef struct _map_meta_info {
     int32_t  mcnt;      /* maximum count */
@@ -265,7 +248,7 @@ typedef struct _map_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-    map_hash_node *root;
+    htree_meta htree;
 } map_meta_info;
 
 /* btree meta info */
