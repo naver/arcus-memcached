@@ -602,19 +602,7 @@ sub bop_smget_is {
 
     print $sock "bop smget $args\r\n$keystr\r\n";
 
-    my $newapi;
-    if (index($miss_keys,' ') >= 0) {
-       $newapi = 1;
-    } else {
-       $newapi = 0;
-    }
-
-    my $exp_elem_head;
-    if ($newapi > 0) {
-        $exp_elem_head = "ELEMENTS $ecount\r\n";
-    } else {
-        $exp_elem_head = "VALUE $ecount\r\n";
-    }
+    my $exp_elem_head = "ELEMENTS $ecount\r\n";
     my $exp_elem_keys = $keys;
     my $exp_elem_flgs = $flags;
     my $exp_elem_bkey = $ebkeys;
@@ -658,47 +646,32 @@ sub bop_smget_is {
     my $res_elem_bkey = join(",", @ebkey_array);
     my $res_elem_vals = join(",", @value_array);
 
-    if ($newapi > 0) {
-        my $res_mkey_head = $line;
-        my @mskey_array = ();
-        my $mskey;
-        $line = scalar <$sock>;
-        while ($line !~ /^TRIMMED_KEYS/) {
-            $mskey = substr $line, 0, length($line)-2;
-            push(@mskey_array, $mskey);
-            $line = scalar <$sock>;
-        }
-        my $res_mkey_vals = join(",", @mskey_array);
 
-        my $res_tkey_head = $line;
-        my @trkey_array = ();
-        my $trkey;
+    my $res_mkey_head = $line;
+    my @mskey_array = ();
+    my $mskey;
+    $line = scalar <$sock>;
+    while ($line !~ /^TRIMMED_KEYS/) {
+        $mskey = substr $line, 0, length($line)-2;
+        push(@mskey_array, $mskey);
         $line = scalar <$sock>;
-        while ($line !~ /^END/ and $line !~ /^DUPLICATED/) {
-            $trkey = substr $line, 0, length($line)-2;
-            push(@trkey_array, $trkey);
-            $line = scalar <$sock>;
-        }
-        my $res_tkey_vals = join(",", @trkey_array);
-        my $res_elem_tail = $line;
-
-        Test::More::is("$res_elem_head $res_elem_bkey $res_elem_vals $res_mkey_head $res_mkey_vals $res_tkey_head $res_tkey_vals $res_elem_tail",
-                       "$exp_elem_head $exp_elem_bkey $exp_elem_vals $exp_mkey_head $exp_mkey_vals $exp_tkey_head $exp_tkey_vals $exp_elem_tail", $msg);
-    } else {
-        my $res_mkey_head = $line;
-        my @mskey_array = ();
-        my $mskey;
-        $line = scalar <$sock>;
-        while ($line !~ /^END/ and $line !~ /^TRIMMED/ and $line !~ /^DUPLICATED/ and $line !~ /^DUPLICATED_TRIMMED/) {
-            $mskey = substr $line, 0, length($line)-2;
-            push(@mskey_array, $mskey);
-            $line = scalar <$sock>;
-        }
-        my $res_mkey_vals = join(",", @mskey_array);
-        my $res_elem_tail = $line;
-        Test::More::is("$res_elem_head $res_elem_bkey $res_elem_vals $res_mkey_head $res_mkey_vals $res_elem_tail",
-                       "$exp_elem_head $exp_elem_bkey $exp_elem_vals $exp_mkey_head $exp_mkey_vals $exp_elem_tail", $msg);
     }
+    my $res_mkey_vals = join(",", @mskey_array);
+    my $res_tkey_head = $line;
+    my @trkey_array = ();
+    my $trkey;
+    $line = scalar <$sock>;
+    while ($line !~ /^END/ and $line !~ /^DUPLICATED/) {
+        $trkey = substr $line, 0, length($line)-2;
+        push(@trkey_array, $trkey);
+        $line = scalar <$sock>;
+    }
+    my $res_tkey_vals = join(",", @trkey_array);
+    my $res_elem_tail = $line;
+
+    Test::More::is("$res_elem_head $res_elem_bkey $res_elem_vals $res_mkey_head $res_mkey_vals $res_tkey_head $res_tkey_vals $res_elem_tail",
+                   "$exp_elem_head $exp_elem_bkey $exp_elem_vals $exp_mkey_head $exp_mkey_vals $exp_tkey_head $exp_tkey_vals $exp_elem_tail", $msg);
+
     if ($exp_elem_keys ne "") {
         Test::More::is("$res_elem_keys", "$exp_elem_keys", $msg);
     }

@@ -342,11 +342,7 @@ struct conn {
     bool         coll_getrim;  /* getrim flag. See process_bop_command() */
     bool         coll_delete;  /* delete flag. See process_mop_get_complete() */
     bool         coll_drop;    /* drop flag */
-#ifdef JHPARK_OLD_SMGET_INTERFACE
-    int          coll_smgmode; /* smget exec mode : 0(oldexec), 1(duplicate), 2(unique) */
-#else
     bool         coll_unique;  /* unique flag (used in smget) */
-#endif
     bkey_range   coll_bkrange; /* bkey range */
     eflag_filter coll_efilter; /* eflag filter */
     eflag_update coll_eupdate; /* eflag update */

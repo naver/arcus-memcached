@@ -11,7 +11,7 @@ my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 if ("$engine" eq "default" || "$engine" eq "") {
-    plan tests => 95;
+    plan tests => 99;
 } else {
     plan tests => 87;
 }
@@ -65,7 +65,7 @@ $rst = "VALUE 12 7
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-# NEW smget test
+# smget test
 $cmd = "bop smget 11 2 0..100 10"; $val = "bkey1 bkey2";
 $rst = "ELEMENTS 10
 bkey1 11 10 6 datum1
@@ -81,6 +81,7 @@ bkey1 11 70 6 datum7
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 10
 bkey1 11 10 6 datum1
@@ -113,6 +114,7 @@ bkey2 12 40 6 datum4
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 10
 bkey2 12 100 7 datum10
@@ -139,6 +141,7 @@ bkey1 11 60 6 datum6
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 4
 bkey2 12 70 6 datum7
@@ -164,6 +167,7 @@ bkey4 NOT_FOUND
 bkey3 NOT_FOUND
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 6
 bkey1 11 40 6 datum4
@@ -190,6 +194,7 @@ bkey3 NOT_FOUND
 bkey4 NOT_FOUND
 TRIMMED_KEYS 0
 END";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 3
 bkey1 11 30 6 datum3
@@ -202,122 +207,20 @@ TRIMMED_KEYS 0
 END";
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 
-# NEW smget test (offset is used)
-if ("$engine" eq "default" || "$engine" eq "") {
-$cmd = "bop smget 23 4 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
-$rst = "ELEMENTS 6
-bkey1 11 30 6 datum3
-bkey1 11 40 6 datum4
-bkey2 12 40 6 datum4
-bkey1 11 50 6 datum5
-bkey2 12 50 6 datum5
-bkey1 11 60 6 datum6
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
-$rst = "ELEMENTS 6
-bkey1 11 30 6 datum3
-bkey1 11 40 6 datum4
-bkey1 11 50 6 datum5
-bkey1 11 60 6 datum6
-bkey1 11 70 6 datum7
-bkey2 12 80 6 datum8
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd . " unique", $val, $rst);
-
-$cmd = "bop smget 23 4 90..30 3 9"; $val = "bkey2 bkey3 bkey1 bkey4";
-$rst = "ELEMENTS 8
-bkey1 11 70 6 datum7
-bkey2 12 60 6 datum6
-bkey1 11 60 6 datum6
-bkey2 12 50 6 datum5
-bkey1 11 50 6 datum5
-bkey2 12 40 6 datum4
-bkey1 11 40 6 datum4
-bkey1 11 30 6 datum3
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
-$rst = "ELEMENTS 4
-bkey2 12 60 6 datum6
-bkey2 12 50 6 datum5
-bkey2 12 40 6 datum4
-bkey1 11 30 6 datum3
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd . " unique", $val, $rst);
-
-$cmd = "bop smget 23 4 200..300 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
-$rst = "ELEMENTS 0
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
-$rst = "ELEMENTS 0
-MISSED_KEYS 2
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-TRIMMED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd . " unique", $val, $rst);
-
-$cmd = "bop smget 29 5 0..100 4 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey3";
-$rst = "ELEMENTS 6
-bkey2 12 40 6 datum4
-bkey1 11 50 6 datum5
-bkey2 12 50 6 datum5
-bkey1 11 60 6 datum6
-bkey2 12 60 6 datum6
-bkey1 11 70 6 datum7
-MISSED_KEYS 3
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-bkey3 NOT_FOUND
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
-$rst = "ELEMENTS 6
-bkey1 11 50 6 datum5
-bkey1 11 60 6 datum6
-bkey1 11 70 6 datum7
-bkey2 12 80 6 datum8
-bkey1 11 90 6 datum9
-bkey2 12 100 7 datum10
-MISSED_KEYS 3
-bkey3 NOT_FOUND
-bkey4 NOT_FOUND
-bkey3 NOT_FOUND
-TRIMMED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd . " unique", $val, $rst);
-}
-
-# NEW smget test: failures
+# smget test: failures
 $cmd = "bop smget 23 2 0..100 6"; $val = "bkey2 bkey3 bkey1 bkey4";
 $rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 $cmd = "bop smget 29 5 0..100 6"; $val = "bkey2 bkey3 bkey1 bkey4 kvkey";
 $rst = "TYPE_MISMATCH";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 $cmd = "bop smget 29 5 0..100 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey1";
 $rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 
@@ -346,7 +249,7 @@ $rst = "VALUE 12 5
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-# NEW smget test
+# smget test
 $cmd = "bop smget 11 2 0..100 5"; $val = "bkey1 bkey2";
 $rst = "ELEMENTS 5
 bkey2 12 20 6 datum2
@@ -357,6 +260,7 @@ bkey2 12 100 7 datum10
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 END";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 5
 bkey2 12 20 6 datum2
@@ -398,6 +302,7 @@ KEY_30 NOT_FOUND
 KEY_16 NOT_FOUND
 TRIMMED_KEYS 0
 END";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 
@@ -405,7 +310,7 @@ mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 mem_cmd_is($sock, "delete bkey1", "", "DELETED");
 mem_cmd_is($sock, "delete bkey2", "", "DELETED");
 
-# NEW smget unique test 1
+# smget unique test 1
 # - bkey1: 10, 6, 2
 # - bkey2: 10, 4
 # - bkey3: 9, 5, 1
@@ -427,7 +332,7 @@ mem_cmd_is($sock, "bop create bkey4 12 0 0", "", "CREATED");
 mem_cmd_is($sock, "bop insert bkey4 7 6",  "datum7", "STORED");
 mem_cmd_is($sock, "bop insert bkey4 3 6",  "datum3", "STORED");
 
-# NEW smget test
+# smget test
 $cmd = "bop smget 23 4 10..0 3"; $val = "bkey1 bkey2 bkey3 bkey4";
 $rst = "ELEMENTS 3
 bkey2 12 10 7 datum10
@@ -436,6 +341,7 @@ bkey3 12 9 6 datum9
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 3
 bkey2 12 10 7 datum10
@@ -446,7 +352,7 @@ TRIMMED_KEYS 0
 END";
 mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 
-# NEW smget unique test 2
+# smget unique test 2
 # - bkey1: 10, 4
 # - bkey2: 10, 6, 2
 # - bkey3: 9, 5, 1
@@ -471,6 +377,7 @@ bkey3 12 9 6 datum9
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 mem_cmd_is($sock, $cmd . " duplicate", $val, $rst);
 $rst = "ELEMENTS 3
 bkey2 12 10 7 datum10
