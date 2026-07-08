@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More;
+use Test::More tests => 78;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -9,12 +9,6 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
-
-if ("$engine" eq "default" || "$engine" eq "") {
-    plan tests => 78;
-} else {
-    plan tests => 67;
-}
 
 my $cmd;
 my $val;
