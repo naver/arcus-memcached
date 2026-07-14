@@ -42,7 +42,7 @@ B+tree collection을 empty 상태로 생성한다.
 
 ```
 bop create <key> <attributes> [noreply]\r\n
-* attributes: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* attributes: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string
@@ -73,7 +73,7 @@ B+tree collection에 하나의 element를 추가하는 명령으로
 ```
 bop insert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\r\n<data>\r\n
 bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\r\n<data>\r\n
-* attributes: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* attributes: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string

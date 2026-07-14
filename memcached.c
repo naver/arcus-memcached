@@ -10080,7 +10080,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "lop delete <key> <index or range> [drop] [noreply|pipe]\\r\\n" "\n"
         "\t" "lop get <key> <index or range> [delete|drop]\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <attributes> : <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "set") == 0) {
         out_string(c,
@@ -10090,7 +10090,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "sop get <key> <count> [delete|drop]\\r\\n" "\n"
         "\t" "sop exist <key> <bytes> [pipe]\\r\\n<data>\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <attributes> : <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "map") == 0) {
         out_string(c,
@@ -10100,7 +10100,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <attributes> : <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
         out_string(c,
@@ -10117,7 +10117,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <attributes> : <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]" "\n"
         "\t" "* <eflag_update> : [<offset> <bitwop>] <value>" "\n"
         "\t" "* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>" "\n"
         "\t" "                 : <offset> [<bitwop> <bitwvalue>] EQ|NE <comma separated compvalue list>" "\n"
@@ -10885,21 +10885,15 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
            coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
     int64_t exptime;
 
-    /* create attributes: flags, exptime, maxcount, ovflaction, unreadable */
-    /* support arcus 1.5 backward compatibility. */
-    if (ntokens < 1 || ntokens > 5) return -1;
-    //if (ntokens < 3 || ntokens > 5) return -1;
+    /* create attributes: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable] */
+    if (ntokens < 2 || ntokens > 5) return -1;
 
     /* flags */
     if (! safe_strtoul(tokens[0].value, &attrp->flags)) return -1;
     attrp->flags = htonl(attrp->flags);
 
     /* exptime */
-    if (ntokens >= 2) {
-        if (! safe_strtoll(tokens[1].value, &exptime)) return -1;
-    } else {
-        exptime = 0; /* default value */
-    }
+    if (! safe_strtoll(tokens[1].value, &exptime)) return -1;
     attrp->exptime = realtime(exptime);
 
     /* maxcount */
@@ -11272,7 +11266,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
     }
     else if (strcmp(subcommand, "create") == 0) {
-        CHECK_NTOKENS(ntokens, 7, 10);
+        CHECK_NTOKENS(ntokens, 6, 10);
 
         set_noreply_maybe(c, tokens, ntokens);
 
@@ -11604,7 +11598,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        if (rest_ntokens >= 2) {
+        if (rest_ntokens >= 3) {
             if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_SET, &c->coll_attr_space) != 0) {
@@ -11630,7 +11624,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
     }
     else if (strcmp(subcommand, "create") == 0) {
-        CHECK_NTOKENS(ntokens, 7, 10);
+        CHECK_NTOKENS(ntokens, 6, 10);
 
         set_noreply_maybe(c, tokens, ntokens);
 
@@ -12836,7 +12830,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        if (rest_ntokens >= 2) {
+        if (rest_ntokens >= 3) {
             if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_MAP, &c->coll_attr_space) != 0) {
@@ -12862,7 +12856,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
     }
     else if (strcmp(subcommand, "create") == 0) {
-        CHECK_NTOKENS(ntokens, 7, 10);
+        CHECK_NTOKENS(ntokens, 6, 10);
 
         set_noreply_maybe(c, tokens, ntokens);
 
@@ -13106,7 +13100,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + ((c->noreply || c->coll_getrim) ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        if (rest_ntokens >= 2) {
+        if (rest_ntokens >= 3) {
             if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_BTREE, &c->coll_attr_space) != 0) {
@@ -13132,7 +13126,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
     }
     else if (strcmp(subcommand, "create") == 0) {
-        CHECK_NTOKENS(ntokens, 7, 10);
+        CHECK_NTOKENS(ntokens, 6, 10);
 
         set_noreply_maybe(c, tokens, ntokens);
 
