@@ -19,7 +19,7 @@ Set collection을 empty 상태로 생성한다.
 
 ```
 sop create <key> <attributes> [noreply]\r\n
-* <attributes>: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* <attributes>: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string
@@ -45,7 +45,7 @@ Set collection을 생성하면서 하나의 element를 삽입할 수도 있다.
 
 ```
 sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
-* <attributes>: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* <attributes>: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string

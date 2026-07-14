@@ -19,7 +19,7 @@ Map collection을 empty 상태로 생성한다.
 
 ```
 mop create <key> <attributes> [noreply]\r\n
-* <attributes>: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* <attributes>: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string
@@ -49,7 +49,7 @@ Map collection에 \<field, value\>로 구성된 하나의 element를 추가하�
 ```
 mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
 mop upsert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
-* <attributes>: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
+* <attributes>: <flags> <exptime> [<maxcount>] [<ovflaction>] [unreadable]
 ```
 
 - \<key\> - 대상 item의 key string
