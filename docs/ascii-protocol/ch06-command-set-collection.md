@@ -113,13 +113,11 @@ sop get <key> <count> [delete|drop]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<count\> - 조회할 elements 개수를 지정. 0이면 전체 elements를 의미한다.
+- \<count\> - 조회할 elements 개수를 지정
+  - 0이면, 전체 elements 조회
+  - 양수(최대값은 1000)이면, 랜덤하게 elements 조회 (전체 elements 수 이상이면, 전체 조회로 동작)
 - delete or drop - element 조회하면서 그 element를 delete할 것인지,
 그리고 delete로 인해 empty set이 될 경우 그 set을 drop할 것인지를 지정한다.
-
-sop get 명령은 다음과 같은 특징을 갖는다.
-- count 값은 0 또는 양수이며, 양수인 경우 elements를 랜덤하게 조회한다.
-- long request를 방지하기 위해 count의 최대값은 1000으로 제한한다.
 
 성공 시의 response string은 아래와 같다.
 VALUE 라인의 \<count\>는 조회된 element 개수를 의미한다.
