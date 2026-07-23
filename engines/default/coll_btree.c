@@ -560,6 +560,17 @@ static void (*BINARY_BITWISE_OP[BITWISE_OP_MAX]) (const unsigned char *v1, const
 #define BKEY_ISGE(bk1, nbk1, bk2, nbk2) \
         (((nbk1)==0 && (nbk2)==0) ? UINT64_ISGE((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
                                   : BINARY_ISGE((bk1),(nbk1),(bk2),(nbk2)))
+
+static const void *btree_get_bkey(const btree_elem_item *elem, uint32_t *nbkey)
+{
+    *nbkey = elem->nbkey;
+    return elem->data;
+}
+
+static int btree_elem_cmp(const btree_elem_item *e1, const btree_elem_item *e2)
+{
+    return BKEY_COMP(e1->data, e1->nbkey, e2->data, e2->nbkey);
+}
 /******************* BKEY COMPARISION CODE *************************/
 
 /**************** MAX BKEY RANGE MANIPULATION **********************/
@@ -746,13 +757,15 @@ static void do_btree_decr_path(btree_elem_posi *path, int depth)
 }
 
 static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
-                                           const unsigned char *bkey, const uint32_t nbkey,
+                                           const void *bkey, const uint32_t nbkey,
                                            btree_elem_posi *path,
                                            btree_elem_item **found_elem)
 {
     btree_indx_node *node = root;
     btree_elem_item *elem;
     int mid, left, right, comp;
+    const void *sep_bkey;
+    uint32_t sep_nbkey;
 
     *found_elem = NULL; /* the same bkey is not found */
 
@@ -763,7 +776,8 @@ static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
         while (left <= right) {
             mid  = (left + right) / 2;
             elem = do_btree_get_first_elem(node->item[mid]); /* separator */
-            comp = BKEY_COMP(bkey, nbkey, elem->data, elem->nbkey);
+            sep_bkey = btree_get_bkey(elem, &sep_nbkey);
+            comp = BKEY_COMP(bkey, nbkey, sep_bkey, sep_nbkey);
             if (comp == 0) { /* the same bkey is found */
                 *found_elem = elem;
                 if (path) {
@@ -791,16 +805,19 @@ static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
 }
 
 static ENGINE_ERROR_CODE do_btree_find_insposi(btree_indx_node *root,
-                                               const unsigned char *ins_bkey, const uint32_t ins_nbkey,
+                                               btree_elem_item *ins_elem,
                                                btree_elem_posi *path)
 {
     btree_indx_node *node;
     btree_elem_item *elem;
     int mid, left, right, comp;
+    const void *bkey;
+    uint32_t nbkey;
 
     /* find leaf node */
-    node = do_btree_find_leaf(root, ins_bkey, ins_nbkey, path, &elem);
-    if (elem != NULL) { /* the bkey(ins_bkey) is found */
+    bkey = btree_get_bkey(ins_elem, &nbkey);
+    node = do_btree_find_leaf(root, bkey, nbkey, path, &elem);
+    if (elem != NULL) { /* the ins_elem is found */
         /* while traversing to leaf node, the bkey can be found.
          * refer to do_btree_find_leaf() function.
          */
@@ -809,24 +826,24 @@ static ENGINE_ERROR_CODE do_btree_find_insposi(btree_indx_node *root,
         return ENGINE_ELEM_EEXISTS;
     }
 
-    /* do search the bkey(ins_bkey) in leaf node */
+    /* do search the ins_elem in leaf node */
     left  = 0;
     right = node->used_count-1;
 
     while (left <= right) {
         mid  = (left + right) / 2;
         elem = BTREE_GET_ELEM_ITEM(node, mid);
-        comp = BKEY_COMP(ins_bkey, ins_nbkey, elem->data, elem->nbkey);
+        comp = btree_elem_cmp(ins_elem, elem);
         if (comp == 0) break;
         if (comp <  0) right = mid-1;
         else           left  = mid+1;
     }
 
-    if (left <= right) { /* the bkey(ins_bkey) is found */
+    if (left <= right) { /* the ins_elem is found */
         path[0].node = node;
         path[0].indx = mid;
         return ENGINE_ELEM_EEXISTS;
-    } else {             /* the bkey(ins_bkey) is not found */
+    } else {             /* the ins_elem is not found */
         path[0].node = node;
         path[0].indx = left;
         return ENGINE_SUCCESS;
@@ -840,6 +857,8 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     btree_indx_node *node;
     btree_elem_item *elem;
     int mid, left, right, comp;
+    const void *bkey;
+    uint32_t nbkey;
 
     if (bkrange == NULL) {
         assert(bkrtype != BKEY_RANGE_TYPE_SIN);
@@ -877,7 +896,8 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     while (left <= right) {
         mid  = (left + right) / 2;
         elem = BTREE_GET_ELEM_ITEM(node, mid);
-        comp = BKEY_COMP(bkrange->from_bkey, bkrange->from_nbkey, elem->data, elem->nbkey);
+        bkey = btree_get_bkey(elem, &nbkey);
+        comp = BKEY_COMP(bkrange->from_bkey, bkrange->from_nbkey, bkey, nbkey);
         if (comp == 0) break;
         if (comp <  0) right = mid-1;
         else           left  = mid+1;
@@ -933,7 +953,8 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
                 elem = NULL;
             } else {
                 elem = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
-                if (BKEY_ISGT(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey))
+                bkey = btree_get_bkey(elem, &nbkey);
+                if (BKEY_ISGT(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey))
                     elem = NULL;
             }
             break;
@@ -955,7 +976,8 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
                 elem = NULL;
             } else {
                 elem = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
-                if (BKEY_ISLT(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey))
+                bkey = btree_get_bkey(elem, &nbkey);
+                if (BKEY_ISLT(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey))
                     elem = NULL;
             }
             break;
@@ -977,8 +999,11 @@ static btree_elem_item *do_btree_find_next(btree_elem_posi *posi,
 
     elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
     if (bkrange != NULL) {
-        int comp = BKEY_COMP(elem->data, elem->nbkey,
-                             bkrange->to_bkey, bkrange->to_nbkey);
+        const void *bkey;
+        uint32_t nbkey;
+        int comp;
+        bkey = btree_get_bkey(elem, &nbkey);
+        comp = BKEY_COMP(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
@@ -1004,8 +1029,11 @@ static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi,
 
     elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
     if (bkrange != NULL) {
-        int comp = BKEY_COMP(elem->data, elem->nbkey,
-                             bkrange->to_bkey, bkrange->to_nbkey);
+        const void *bkey;
+        uint32_t nbkey;
+        int comp;
+        bkey = btree_get_bkey(elem, &nbkey);
+        comp = BKEY_COMP(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
@@ -1090,7 +1118,7 @@ static void do_btree_consistency_check(btree_indx_node *node, uint32_t ecount, b
             for (i = 0; i < node->used_count; i++) {
                 c_elem = BTREE_GET_ELEM_ITEM(node, i);
                 if (p_elem != NULL) {
-                    comp = BKEY_COMP(p_elem->data, p_elem->nbkey, c_elem->data, c_elem->nbkey);
+                    comp = btree_elem_cmp(p_elem, c_elem);
                     assert(comp < 0);
                 }
                 p_elem = c_elem;
@@ -2196,7 +2224,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
     ENGINE_ERROR_CODE res;
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
-    res = do_btree_find_insposi(info->root, elem->data, elem->nbkey, path);
+    res = do_btree_find_insposi(info->root, elem, path);
     if (res == ENGINE_SUCCESS) {
 #ifdef ENABLE_STICKY_ITEM
         /* sticky memory limit check */
