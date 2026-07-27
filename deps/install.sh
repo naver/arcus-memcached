@@ -68,7 +68,7 @@ echo "---------------------------------------------------"
 ## Install dependencies
 build_and_install $libevent "$prefix --disable-openssl"
 build_and_install $zookeeper $prefix
-build_and_install $cyrussasl $prefix
+build_and_install $cyrussasl "$prefix --disable-macos-framework"
 
 popd > /dev/null
 
