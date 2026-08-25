@@ -2188,6 +2188,72 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
     return ENGINE_SUCCESS;
 }
 
+static void do_btree_build_smallest_trim_range(btree_meta_info *info,
+                                               btree_elem_item *elem, bkey_range *bkrange)
+{
+    /* bkey range that must be trimmed.
+     * => min bkey ~ (new max bkey - maxbkeyrange - 1)
+     */
+    /* from bkey */
+    btree_elem_item *edge_elem = do_btree_get_first_elem(info->root);
+    bkrange->from_nbkey = edge_elem->nbkey;
+    BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange->from_bkey);
+    /* to bkey */
+    bkrange->to_nbkey = info->maxbkeyrange.len;
+    BKEY_DIFF(elem->data, elem->nbkey,
+              info->maxbkeyrange.val, info->maxbkeyrange.len,
+              bkrange->to_nbkey, bkrange->to_bkey);
+    BKEY_DECR(bkrange->to_bkey, bkrange->to_nbkey);
+}
+
+static void do_btree_build_largest_trim_range(btree_meta_info *info,
+                                              btree_elem_item *elem, bkey_range *bkrange)
+{
+    /* bkey range that must be trimmed.
+     * => (new min bkey + maxbkeyrange + 1) ~ max bkey
+     * => max bkey - (max bkey - new min bkey - maxbkeyrange - 1) ~ max bkey
+     */
+    /* from bkey */
+    btree_elem_item *edge_elem = do_btree_get_last_elem(info->root);
+    bkrange->from_nbkey = info->maxbkeyrange.len;
+    BKEY_DIFF(edge_elem->data, edge_elem->nbkey, elem->data, elem->nbkey,
+              bkrange->from_nbkey, bkrange->from_bkey);
+    BKEY_DIFF(bkrange->from_bkey, bkrange->from_nbkey,
+              info->maxbkeyrange.val, info->maxbkeyrange.len,
+              bkrange->from_nbkey, bkrange->from_bkey);
+    BKEY_DECR(bkrange->from_bkey, bkrange->from_nbkey);
+    BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
+              bkrange->from_bkey, bkrange->from_nbkey,
+              bkrange->from_nbkey, bkrange->from_bkey);
+    /* to bkey */
+    bkrange->to_nbkey = edge_elem->nbkey;
+    BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange->to_bkey);
+}
+
+static btree_elem_item *do_btree_delete_first_elem(btree_meta_info *info,
+                                                   size_t *space_decreased)
+{
+    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_indx_node *leaf = do_btree_get_first_leaf(info->root, path);
+    path[0].node = leaf;
+    path[0].indx = 0;
+    btree_elem_item *elem = BTREE_GET_ELEM_ITEM(leaf, 0);
+    ds_btree_elem_unlink(info, path, space_decreased);
+    return elem;
+}
+
+static btree_elem_item *do_btree_delete_last_elem(btree_meta_info *info,
+                                                  size_t *space_decreased)
+{
+    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_indx_node *leaf = do_btree_get_last_leaf(info->root, path);
+    path[0].node = leaf;
+    path[0].indx = leaf->used_count - 1;
+    btree_elem_item *elem = BTREE_GET_ELEM_ITEM(leaf, leaf->used_count - 1);
+    ds_btree_elem_unlink(info, path, space_decreased);
+    return elem;
+}
+
 static void do_btree_overflow_trim(btree_meta_info *info,
                                    btree_elem_item *elem, const int overflow_type,
                                    btree_elem_item **trimmed_elems, uint32_t *trimmed_count)
@@ -2196,75 +2262,36 @@ static void do_btree_overflow_trim(btree_meta_info *info,
            info->ovflact == OVFL_LARGEST_TRIM  || info->ovflact == OVFL_LARGEST_SILENT_TRIM);
 
     if (overflow_type == OVFL_TYPE_RANGE) {
-        btree_elem_item *edge_elem;
+        bkey_range bkrange;
         uint32_t del_count;
-        int      bkrtype;
-        bkey_range bkrange_space;
-        if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM) {
-            /* bkey range that must be trimmed.
-             * => min bkey ~ (new max bkey - maxbkeyrange - 1)
-             */
-            /* from bkey */
-            edge_elem = do_btree_get_first_elem(info->root); /* min bkey elem */
-            bkrange_space.from_nbkey = edge_elem->nbkey;
-            BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.from_bkey);
-            /* to bkey */
-            bkrange_space.to_nbkey = info->maxbkeyrange.len;
-            BKEY_DIFF(elem->data, elem->nbkey,
-                      info->maxbkeyrange.val, info->maxbkeyrange.len,
-                      bkrange_space.to_nbkey, bkrange_space.to_bkey);
-            BKEY_DECR(bkrange_space.to_bkey, bkrange_space.to_nbkey);
-        } else {
-            /* bkey range that must be trimmed.
-             * => (new min bkey + maxbkeyrange + 1) ~ max bkey
-             * => max bkey - (max bkey - new min bkey - maxbkeyrange - 1) ~ max bkey
-             */
-            /* from bkey */
-            edge_elem = do_btree_get_last_elem(info->root);  /* max bkey elem */
-            bkrange_space.from_nbkey = info->maxbkeyrange.len;
-            BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
-                      elem->data, elem->nbkey,
-                      bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            BKEY_DIFF(bkrange_space.from_bkey, bkrange_space.from_nbkey,
-                      info->maxbkeyrange.val, info->maxbkeyrange.len,
-                      bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            BKEY_DECR(bkrange_space.from_bkey, bkrange_space.from_nbkey);
-            BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
-                      bkrange_space.from_bkey, bkrange_space.from_nbkey,
-                      bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            /* to bkey */
-            bkrange_space.to_nbkey = edge_elem->nbkey;
-            BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.to_bkey);
-        }
-        bkrtype = do_btree_bkey_range_type(&bkrange_space);
-        del_count = do_btree_elem_delete(info, bkrtype, &bkrange_space, NULL, 0,
-                                         0, NULL, ELEM_DELETE_TRIM);
+
+        if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM)
+            do_btree_build_smallest_trim_range(info, elem, &bkrange);
+        else
+            do_btree_build_largest_trim_range(info, elem, &bkrange);
+
+        int bkrtype = do_btree_bkey_range_type(&bkrange);
+        del_count = do_btree_elem_delete(info, bkrtype, &bkrange,
+                                         NULL, 0, 0, NULL, ELEM_DELETE_TRIM);
         assert(del_count > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
             info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
     } else { /* overflow_type == OVFL_TYPE_COUNT */
         assert(overflow_type == OVFL_TYPE_COUNT);
-
+        btree_elem_item *edge_elem;
+        size_t space_decreased = 0;
         btree_delete_ctx delete_ctx = {info, ELEM_DELETE_TRIM};
-        btree_elem_posi delpath[BTREE_MAX_DEPTH];
-        assert(info->root->ndepth < BTREE_MAX_DEPTH);
-        if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM) {
-            delpath[0].node = do_btree_get_first_leaf(info->root, delpath);
-            delpath[0].indx = 0;
-        } else { /* info->ovflact == OVFL_LARGEST_TRIM or OVFL_LARGEST_SILENT_TRIM */
-            delpath[0].node = do_btree_get_last_leaf(info->root, delpath);
-            delpath[0].indx = delpath[0].node->used_count - 1;
-        }
 
-        btree_elem_item *edge_elem = BTREE_GET_ELEM_ITEM(delpath[0].node, delpath[0].indx);
+        if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM)
+            edge_elem = do_btree_delete_first_elem(info, &space_decreased);
+        else
+            edge_elem = do_btree_delete_last_elem(info, &space_decreased);
+
         if (trimmed_elems != NULL) {
             edge_elem->refcount++;
             *trimmed_elems = edge_elem;
             *trimmed_count = 1;
         }
-
-        size_t space_decreased = 0;
-        ds_btree_elem_unlink(info, delpath, &space_decreased);
         do_btree_elem_delete_post(edge_elem, &delete_ctx);
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
