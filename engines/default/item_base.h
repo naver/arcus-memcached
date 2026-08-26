@@ -19,6 +19,7 @@
 #define ITEM_BASE_H
 
 #include "hash_tree.h"
+#include "ds_btree.h"
 #include <memcached/engine.h>
 #include <memcached/util.h>
 #include <memcached/visibility.h>
@@ -251,33 +252,6 @@ typedef struct _map_meta_info {
     htree_meta htree;
 } map_meta_info;
 
-/* btree meta info */
-#define BTREE_MAX_DEPTH  7
-#define BTREE_ITEM_COUNT 32 /* Recommend BTREE_ITEM_COUNT >= 8 */
-
-typedef struct _btree_leaf_node {
-    uint16_t refcount;
-    uint8_t  slabs_clsid;      /* which slab class we're in */
-    uint8_t  ndepth;
-    uint16_t used_count;
-    uint16_t reserved;
-    struct _btree_indx_node *prev;
-    struct _btree_indx_node *next;
-    void    *item[BTREE_ITEM_COUNT];
-} btree_leaf_node;
-
-typedef struct _btree_indx_node {
-    uint16_t refcount;
-    uint8_t  slabs_clsid;      /* which slab class we're in */
-    uint8_t  ndepth;
-    uint16_t used_count;
-    uint16_t reserved;
-    struct _btree_indx_node *prev;
-    struct _btree_indx_node *next;
-    void    *item[BTREE_ITEM_COUNT];
-    uint32_t ecnt[BTREE_ITEM_COUNT];
-} btree_indx_node;
-
 typedef struct _btree_meta_info {
     int32_t  mcnt;         /* maximum count */
     int32_t  ccnt;         /* current count */
@@ -288,7 +262,7 @@ typedef struct _btree_meta_info {
     uint8_t  bktype;       /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint8_t  reserved[7];  /* reserved space */
     bkey_t   maxbkeyrange;
-    btree_indx_node *root;
+    ds_btree_meta btree;
 } btree_meta_info;
 
 /* common meta info of list and set */
