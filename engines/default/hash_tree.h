@@ -45,7 +45,7 @@ typedef struct _htree_node {
     uint8_t  slabs_clsid;
     uint8_t  hdepth;
     uint32_t tot_elem_cnt;
-    int16_t  hcnt[HTREE_HASHTAB_SIZE];
+    int32_t  hcnt[HTREE_HASHTAB_SIZE];
     void    *htab[HTREE_HASHTAB_SIZE];
 } htree_node;
 
