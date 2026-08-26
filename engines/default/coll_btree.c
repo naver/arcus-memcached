@@ -362,7 +362,7 @@ static inline btree_indx_node *do_btree_get_last_leaf(btree_indx_node *node,
     return node;
 }
 
-static inline void do_btree_get_bkey(btree_elem_item *elem, bkey_t *bkey)
+static inline void do_btree_copy_bkey(btree_elem_item *elem, bkey_t *bkey)
 {
     if (elem->nbkey > 0) {
         bkey->len = elem->nbkey;
@@ -4057,8 +4057,8 @@ ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
     if (info->ccnt > 0) {
         btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
         btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
-        do_btree_get_bkey(min_bkey_elem, &attrp->minbkey);
-        do_btree_get_bkey(max_bkey_elem, &attrp->maxbkey);
+        do_btree_copy_bkey(min_bkey_elem, &attrp->minbkey);
+        do_btree_copy_bkey(max_bkey_elem, &attrp->maxbkey);
     }
     return ENGINE_SUCCESS;
 }
