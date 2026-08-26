@@ -106,7 +106,7 @@ static htree_node *do_htree_node_alloc(uint8_t hash_depth)
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_elem_cnt = 0;
-        memset(node->hcnt, 0, HTREE_HASHTAB_SIZE*sizeof(uint16_t));
+        memset(node->hcnt, 0, HTREE_HASHTAB_SIZE*sizeof(int32_t));
         memset(node->htab, 0, HTREE_HASHTAB_SIZE*sizeof(void*));
     }
     return node;
@@ -189,7 +189,7 @@ static ENGINE_ERROR_CODE do_htree_elem_link(htree_meta *htree,
                                             htree_node *node, int hidx,
                                             htree_elem_item *elem, size_t *space_increased)
 {
-    if (node->hcnt[hidx] >= HTREE_MAX_HASHCHAIN_SIZE) {
+    if (node->hcnt[hidx] >= HTREE_MAX_HASHCHAIN_SIZE && node->hdepth+1 < HTREE_MAX_DEPTH) {
         htree_node *n_node = do_htree_node_alloc(node->hdepth+1);
         if (n_node == NULL) {
             return ENGINE_ENOMEM;
