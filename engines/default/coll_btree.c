@@ -2052,6 +2052,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 {
     btree_delete_ctx delete_ctx = {info, cause};
     uint32_t tot_found = 0;
+    size_t space_decreased = 0;
 
     if (opcost) *opcost = 0;
     if (info->root == NULL) return 0;
@@ -2059,9 +2060,8 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
-        size_t space_decreased = 0;
-        btree_elem_item *deleted = ds_btree_elem_delete(info, bkrtype, bkrange,
-                                                        efilter, &delete_ctx, opcost, &space_decreased);
+        btree_elem_item *deleted = ds_btree_elem_delete(info, bkrtype, bkrange, efilter,
+                                                        &delete_ctx, opcost, &space_decreased);
         if (deleted != NULL) {
             tot_found++;
             if (info->stotal > 0 && space_decreased > 0) {
@@ -2071,7 +2071,6 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
     } else {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
 
-        size_t space_decreased = 0;
         tot_found = ds_btree_elem_delete_bulk(info, bkrtype, bkrange, efilter, offset, count,
                                               &delete_ctx, opcost, &space_decreased);
         if (info->stotal > 0 && space_decreased > 0) {
@@ -2541,16 +2540,17 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                                   uint32_t *opcost, bool *potentialbkeytrim)
 {
     assert(info->root);
+    btree_delete_ctx delete_ctx = {info, ELEM_DELETE_NORMAL};
     uint32_t tot_found = 0;
     uint32_t outside;
     uint32_t *outside_ptr = BTREE_NEED_TRIM_NOTIFICATION(info) ? &outside : NULL;
-    btree_delete_ctx delete_ctx = {info, ELEM_DELETE_NORMAL};
+    size_t space_decreased = 0;
+
     if (opcost) *opcost = 0;
     *potentialbkeytrim = false;
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
-        size_t space_decreased = 0;
         bool ret = ds_btree_elem_get(info, bkrtype, bkrange, efilter,
                                      delete, &delete_ctx,
                                      elem_array, opcost, outside_ptr, &space_decreased);
@@ -2565,7 +2565,6 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
             CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
         }
 
-        size_t space_decreased = 0;
         tot_found = ds_btree_elem_get_bulk(info, bkrtype, bkrange, efilter,
                                            offset, count, delete, &delete_ctx,
                                            elem_array, opcost, outside_ptr, &space_decreased);

@@ -200,9 +200,9 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const int numfields,
 
             deleted = deleted_head;
             while (deleted != NULL) {
-                htree_elem_item *next = deleted->next;
+                deleted_head = deleted->next;
                 do_map_elem_delete_post(info, (map_elem_item *)deleted, cause);
-                deleted = next;
+                deleted = deleted_head;
             }
         } else {
             for (int ii = 0; ii < numfields; ii++) {
@@ -628,9 +628,9 @@ uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
 
         htree_elem_item *deleted = deleted_head;
         while (deleted != NULL) {
-            htree_elem_item *next = deleted->next;
+            deleted_head = deleted->next;
             do_map_elem_delete_post(info, (map_elem_item *)deleted, ELEM_DELETE_COLL);
-            deleted = next;
+            deleted = deleted_head;
         }
 
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */

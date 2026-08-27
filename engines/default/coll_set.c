@@ -502,9 +502,9 @@ uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
 
         htree_elem_item *deleted = deleted_head;
         while (deleted != NULL) {
-            htree_elem_item *next = deleted->next;
+            deleted_head = deleted->next;
             do_set_elem_delete_post(info, (set_elem_item *)deleted, ELEM_DELETE_COLL);
-            deleted = next;
+            deleted = deleted_head;
         }
 
         if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
