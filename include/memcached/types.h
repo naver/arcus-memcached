@@ -297,6 +297,10 @@ extern "C" {
 #define EFLAG_NULL 255
 #define MAX_EFLAG_COMPARE_COUNT 100
 
+#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
+#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
+#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
+
     /* field list structure */
     typedef struct {
         char *value;
