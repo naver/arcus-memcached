@@ -111,8 +111,7 @@ void UNLOCK_SETTING(void) {
 
 static pthread_mutex_t shutdown_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t memcached_shutdown=0;
-volatile int32_t shutdown_delay=0;
-volatile bool dynamic_shutdown=false;
+volatile rel_time_t shutdown_time=0;
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -10459,14 +10458,13 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
     }
 #endif
 
-    if (memcached_shutdown > 0 && shutdown_delay < 1000) {
+    if (memcached_shutdown > 0 && shutdown_time <= current_time) {
         out_string(c, "DENIED");
         return;
     }
 
     if (ntokens == 2) {
         delay = 2;
-        dynamic_shutdown = true;
     } else {
         if (! safe_strtol(tokens[1].value, &delay)) {
             print_invalid_command(c, tokens, ntokens);
@@ -10477,11 +10475,10 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
             out_string(c, "CLIENT_ERROR invalid arguments");
             return;
         }
-        dynamic_shutdown = false;
     }
     mc_logger->log(EXTENSION_LOG_WARNING, c,
-                   "shutdown scheduled (time=%d, dynamic=%d)\n", (int)delay, dynamic_shutdown);
-    shutdown_delay = delay * 1000;
+                   "shutdown scheduled (time=%d)\n", (int)delay);
+    shutdown_time = current_time + delay;
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
         memcached_shutdown = 1;
@@ -14577,24 +14574,14 @@ void event_handler(const int fd, const short which, void *arg)
     conn *c = (conn *)arg;
     assert(c != NULL);
 
-    if (memcached_shutdown) {
-        if (c->thread == NULL) {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                        "Main thread is now terminating from event handler.\n");
-            }
-            event_base_loopbreak(c->event.ev_base);
-            return;
+    if (memcached_shutdown > 1) {
+        if (settings.verbose > 0) {
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                    "Worker thread[%d] is now terminating from event handler.\n",
+                    c->thread->index);
         }
-        if (memcached_shutdown > 1) {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                        "Worker thread[%d] is now terminating from event handler.\n",
-                        c->thread->index);
-            }
-            event_base_loopbreak(c->event.ev_base);
-            return;
-        }
+        event_base_loopbreak(c->event.ev_base);
+        return;
     }
 
     c->which = which;
@@ -14913,6 +14900,23 @@ static int server_socket_unix(const char *path, int access_mask)
     return 0;
 }
 
+#ifdef ENABLE_ZK_INTEGRATION
+static void shutdown_zk_resources(void)
+{
+    static bool zk_finalized = false;
+
+    if (arcus_zk_cfg == NULL || zk_finalized) {
+        return;
+    }
+    zk_finalized = true;
+
+    /* final zk module */
+    arcus_zk_final("graceful shutdown");
+    /* final mc heartbeat */
+    arcus_hb_final();
+}
+#endif
+
 static struct event clockevent;
 
 static void clock_handler(const int fd, const short which, void *arg)
@@ -14921,12 +14925,17 @@ static void clock_handler(const int fd, const short which, void *arg)
     static bool initialized = false;
 
     if (memcached_shutdown) {
-        if (settings.verbose > 0) {
-            mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Main thread is now terminating from clock handler.\n");
+#ifdef ENABLE_ZK_INTEGRATION
+        shutdown_zk_resources();
+#endif
+        if (shutdown_time <= current_time) {
+            if (settings.verbose > 0) {
+                mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                        "Main thread is now terminating from clock handler.\n");
+            }
+            event_base_loopbreak(main_base);
+            return;
         }
-        event_base_loopbreak(main_base);
-        return;
     }
 
     if (initialized) {
@@ -15117,8 +15126,7 @@ static void remove_pidfile(const char *pid_file)
 
 static void shutdown_server(void)
 {
-    shutdown_delay = 0;
-    dynamic_shutdown = false;
+    shutdown_time = 0;
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
         memcached_shutdown = 1;
@@ -16483,42 +16491,11 @@ int main (int argc, char **argv)
     if (settings.daemonize)
         remove_pidfile(settings.pid_file);
 
-#ifdef ENABLE_ZK_INTEGRATION
-    /* 2) shutdown arcus ZK connection */
-    if (arcus_zk_cfg) {
-        /* final zk module */
-        arcus_zk_final("graceful shutdown");
-        /* final mc heartbeat */
-        arcus_hb_final();
-    }
-#endif
-
-    /* 3) close listen sockes not to accept new connections */
+    /* 2) close listen sockes not to accept new connections */
     close_listen_sockets();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
 
-    /* 4) wait until existing clients close */
-    unsigned int prev_conns = UINT_MAX;
-    while (shutdown_delay > 0) {
-        if (dynamic_shutdown) {
-            LOCK_STATS();
-            if (mc_stats.curr_conns > 0 && mc_stats.curr_conns < prev_conns) {
-                prev_conns = mc_stats.curr_conns;
-            } else {
-                mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Client connections haven't been reduced. "
-                    "Shuts down %dms earlier than scheduled time.\n",
-                    shutdown_delay);
-                shutdown_delay = 0;
-            }
-            UNLOCK_STATS();
-            if (shutdown_delay <= 0) break;
-        }
-        usleep(200000); /* sleep 200ms */
-        shutdown_delay -= 200;
-    }
-
-    /* 5) shutdown all threads */
+    /* 3) shutdown all threads */
     pthread_mutex_lock(&shutdown_lock);
     memcached_shutdown = 2;
     pthread_mutex_unlock(&shutdown_lock);
@@ -16529,7 +16506,7 @@ int main (int argc, char **argv)
     }
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
 
-    /* 6) destroy data structures */
+    /* 4) destroy data structures */
 #ifdef COMMAND_LOGGING
     cmdlog_final(); /* finalize command logging */
 #endif
@@ -16546,7 +16523,7 @@ int main (int argc, char **argv)
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
 #ifdef ENABLE_ZK_INTEGRATION
-    /* 7) destroy cluster config structure */
+    /* 5) destroy cluster config structure */
     if (arcus_zk_cfg) {
         arcus_zk_destroy();
     }
