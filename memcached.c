@@ -15134,7 +15134,7 @@ static void shutdown_server(void)
     pthread_mutex_unlock(&shutdown_lock);
 }
 
-static void sigterm_handler(int sig)
+static void sigterm_handler(const int sig, const short which, void *arg)
 {
     assert(sig == SIGTERM || sig == SIGINT);
 
@@ -15148,10 +15148,18 @@ static void sigterm_handler(int sig)
 
 static int install_sigterm_handler(void)
 {
-    struct sigaction sa = {.sa_handler = sigterm_handler, .sa_flags = 0};
+    static struct event sigterm_event;
+    static struct event sigint_event;
 
-    if (sigemptyset(&sa.sa_mask) == -1 || sigaction(SIGTERM, &sa, 0) == -1 ||
-        sigaction(SIGINT, &sa, 0) == -1) {
+    evsignal_set(&sigterm_event, SIGTERM, sigterm_handler, NULL);
+    event_base_set(main_base, &sigterm_event);
+    if (evsignal_add(&sigterm_event, NULL) == -1) {
+        return -1;
+    }
+
+    evsignal_set(&sigint_event, SIGINT, sigterm_handler, NULL);
+    event_base_set(main_base, &sigint_event);
+    if (evsignal_add(&sigint_event, NULL) == -1) {
         return -1;
     }
     return 0;
@@ -16098,12 +16106,6 @@ int main (int argc, char **argv)
         old_opts += sprintf(old_opts, "verbose=%lu;", (unsigned long)settings.verbose);
     }
 
-    if (install_sigterm_handler() != 0) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                       "Failed to install SIGTERM handler\n");
-        exit(EXIT_FAILURE);
-    }
-
     char *topkeys_env = getenv("MEMCACHED_TOP_KEYS");
     if (topkeys_env != NULL) {
         settings.topkeys = atoi(topkeys_env);
@@ -16310,6 +16312,12 @@ int main (int argc, char **argv)
 
     /* initialize clock event */
     clock_handler(0, 0, 0);
+
+    if (install_sigterm_handler() != 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to install SIGTERM handler\n");
+        exit(EXIT_FAILURE);
+    }
 
     /* load and initialize the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
