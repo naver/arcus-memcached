@@ -1131,11 +1131,11 @@ static void lrec_bt_elem_delete_logical_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
     offset += log->body.keylen;
     /* from bkey copy */
-    memcpy(bufptr + offset, log->bkrangep->from_bkey, real_from_nbkey);
+    memcpy(bufptr + offset, log->bkrangep->from_bkey.val, real_from_nbkey);
     offset += real_from_nbkey;
     /* to bkey copy */
     if (real_to_nbkey != BKEY_NULL) {
-        memcpy(bufptr + offset, log->bkrangep->to_bkey, real_to_nbkey);
+        memcpy(bufptr + offset, log->bkrangep->to_bkey.val, real_to_nbkey);
         offset += real_to_nbkey;
     }
     /* eflag filter copy */
@@ -1163,12 +1163,12 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
 
     /* element range */
     bkey_range bkrange;
-    memcpy(bkrange.from_bkey, from_bkeyptr, real_from_nbkey);
-    bkrange.from_nbkey = body->from_nbkey;
+    memcpy(bkrange.from_bkey.val, from_bkeyptr, real_from_nbkey);
+    bkrange.from_bkey.len = body->from_nbkey;
     if (real_to_nbkey != BKEY_NULL) {
-        memcpy(bkrange.to_bkey, to_bkeyptr, real_to_nbkey);
+        memcpy(bkrange.to_bkey.val, to_bkeyptr, real_to_nbkey);
     }
-    bkrange.to_nbkey = body->to_nbkey;
+    bkrange.to_bkey.len = body->to_nbkey;
 
     /* efilter */
     eflag_filter efilter;
@@ -1787,8 +1787,8 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
     log->body.drop   = drop;
     log->body.offset = offset;
     log->body.reqcount = reqcount;
-    log->body.from_nbkey = bkrange->from_nbkey;
-    log->body.to_nbkey = bkrange->to_nbkey;
+    log->body.from_nbkey = bkrange->from_bkey.len;
+    log->body.to_nbkey = bkrange->to_bkey.len;
     log->body.filtering = (efilter == NULL ? 0 : 1);
     if (log->body.filtering) {
         log->body.nbitwval = efilter->nbitwval;
