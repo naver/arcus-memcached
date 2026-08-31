@@ -363,17 +363,6 @@ static inline btree_indx_node *do_btree_get_last_leaf(btree_indx_node *node,
     return node;
 }
 
-static inline void do_btree_copy_bkey(btree_elem_item *elem, bkey_t *bkey)
-{
-    if (elem->nbkey > 0) {
-        bkey->len = elem->nbkey;
-        memcpy(bkey->val, elem->data, elem->nbkey);
-    } else {
-        bkey->len = 0;
-        memcpy(bkey->val, elem->data, sizeof(uint64_t));
-    }
-}
-
 /******************* BKEY COMPARISION CODE *************************/
 #define BKEY_COMP(bk1, nbk1, bk2, nbk2) \
         (((nbk1)==0 && (nbk2)==0) ? UINT64_COMP((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
@@ -422,19 +411,47 @@ static int btree_elem_cmp(const void *bkey, uint32_t nbkey, const btree_elem_ite
 /******************* BKEY COMPARISION CODE *************************/
 
 /**************** MAX BKEY RANGE MANIPULATION **********************/
-#define BKEY_COPY(bk, nbk, res) \
-        ((nbk)==0 ? UINT64_COPY((const uint64_t*)(bk), (uint64_t*)(res)) \
-                  : BINARY_COPY((bk), (nbk), (res)))
+static inline bkey_t BKEY_OF(const btree_elem_item *elem) {
+    bkey_t bkey;
+    if (elem->nbkey > 0) {
+        bkey.len = elem->nbkey;
+        memcpy(bkey.val, elem->data, elem->nbkey);
+    } else {
+        bkey.len = 0;
+        memcpy(bkey.val, elem->data, sizeof(uint64_t));
+    }
+    return bkey;
+}
 
-#define BKEY_DIFF(bk1, nbk1, bk2, nbk2, len, res) \
-        ((len)==0 ? UINT64_DIFF((const uint64_t*)(bk1), (const uint64_t*)(bk2), (uint64_t*)(res)) \
-                  : BINARY_DIFF((bk1), (nbk1), (bk2), (nbk2), (len), (res)))
+static inline bkey_t BKEY_DIFF(const unsigned char *bk1, uint8_t nbk1,
+                               const unsigned char *bk2, uint8_t nbk2,
+                               const int precision)
+{
+    bkey_t result;
+    if (nbk1 == 0 && nbk2 == 0) {
+        result.len = 0;
+        UINT64_DIFF((const uint64_t*)bk1, (const uint64_t*)bk2, (uint64_t*)result.val);
+    } else {
+        result.len = precision;
+        BINARY_DIFF(bk1, nbk1, bk2, nbk2, precision, result.val);
+    }
+    return result;
+}
 
-#define BKEY_INCR(bk, nbk) \
-        ((nbk)==0 ? UINT64_INCR((uint64_t*)(bk)) : BINARY_INCR((bk), (nbk)))
+static inline void BKEY_INCR(bkey_t *bk) {
+    if (bk->len == 0)
+        UINT64_INCR((uint64_t*)bk->val);
+    else
+        BINARY_INCR(bk->val, bk->len);
+}
 
-#define BKEY_DECR(bk, nbk) \
-        ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
+static inline void BKEY_DECR(bkey_t *bk)
+{
+    if (bk->len == 0)
+        UINT64_DECR((uint64_t*)bk->val);
+    else
+        BINARY_DECR(bk->val, bk->len);
+}
 
 /**************** MAX BKEY RANGE MANIPULATION **********************/
 
@@ -1861,9 +1878,9 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
 
         if (BKEY_ISLT(elem->data, elem->nbkey, min_bkey_elem->data, min_bkey_elem->nbkey))
         {
-            newbkeyrange.len = info->maxbkeyrange.len;
-            BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey, elem->data, elem->nbkey,
-                      newbkeyrange.len, newbkeyrange.val);
+            newbkeyrange = BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
+                                     elem->data, elem->nbkey,
+                                     info->maxbkeyrange.len);
             if (BKEY_ISGT(newbkeyrange.val, newbkeyrange.len, info->maxbkeyrange.val, info->maxbkeyrange.len))
             {
                 if (info->ovflact == OVFL_LARGEST_TRIM || info->ovflact == OVFL_LARGEST_SILENT_TRIM)
@@ -1874,9 +1891,9 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
         }
         else if (BKEY_ISGT(elem->data, elem->nbkey, max_bkey_elem->data, max_bkey_elem->nbkey))
         {
-            newbkeyrange.len = info->maxbkeyrange.len;
-            BKEY_DIFF(elem->data, elem->nbkey, min_bkey_elem->data, min_bkey_elem->nbkey,
-                      newbkeyrange.len, newbkeyrange.val);
+            newbkeyrange = BKEY_DIFF(elem->data, elem->nbkey,
+                                     min_bkey_elem->data, min_bkey_elem->nbkey,
+                                     info->maxbkeyrange.len);
             if (BKEY_ISGT(newbkeyrange.val, newbkeyrange.len, info->maxbkeyrange.val, info->maxbkeyrange.len))
             {
                 if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM)
@@ -1926,15 +1943,12 @@ static void do_btree_build_smallest_trim_range(btree_meta_info *info,
      * => min bkey ~ (new max bkey - maxbkeyrange - 1)
      */
     /* from bkey */
-    btree_elem_item *edge_elem = do_btree_get_first_elem(info->root);
-    bkrange->from_bkey.len = edge_elem->nbkey;
-    BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange->from_bkey.val);
+    bkrange->from_bkey = BKEY_OF(do_btree_get_first_elem(info->root));
     /* to bkey */
-    bkrange->to_bkey.len = info->maxbkeyrange.len;
-    BKEY_DIFF(elem->data, elem->nbkey,
-              info->maxbkeyrange.val, info->maxbkeyrange.len,
-              bkrange->to_bkey.len, bkrange->to_bkey.val);
-    BKEY_DECR(bkrange->to_bkey.val, bkrange->to_bkey.len);
+    bkrange->to_bkey = BKEY_DIFF(elem->data, elem->nbkey,
+                                 info->maxbkeyrange.val, info->maxbkeyrange.len,
+                                 info->maxbkeyrange.len);
+    BKEY_DECR(&bkrange->to_bkey);
 }
 
 static void do_btree_build_largest_trim_range(btree_meta_info *info,
@@ -1946,19 +1960,19 @@ static void do_btree_build_largest_trim_range(btree_meta_info *info,
      */
     /* from bkey */
     btree_elem_item *edge_elem = do_btree_get_last_elem(info->root);
-    bkrange->from_bkey.len = info->maxbkeyrange.len;
-    BKEY_DIFF(edge_elem->data, edge_elem->nbkey, elem->data, elem->nbkey,
-              bkrange->from_bkey.len, bkrange->from_bkey.val);
-    BKEY_DIFF(bkrange->from_bkey.val, bkrange->from_bkey.len,
-              info->maxbkeyrange.val, info->maxbkeyrange.len,
-              bkrange->from_bkey.len, bkrange->from_bkey.val);
-    BKEY_DECR(bkrange->from_bkey.val, bkrange->from_bkey.len);
-    BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
-              bkrange->from_bkey.val, bkrange->from_bkey.len,
-              bkrange->from_bkey.len, bkrange->from_bkey.val);
+    bkrange->from_bkey = BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
+                                   elem->data, elem->nbkey,
+                                   info->maxbkeyrange.len);
+    bkrange->from_bkey = BKEY_DIFF(bkrange->from_bkey.val, bkrange->from_bkey.len,
+                                   info->maxbkeyrange.val, info->maxbkeyrange.len,
+                                   info->maxbkeyrange.len);
+    BKEY_DECR(&bkrange->from_bkey);
+
+    bkrange->from_bkey = BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
+                                   bkrange->from_bkey.val, bkrange->from_bkey.len,
+                                   info->maxbkeyrange.len);
     /* to bkey */
-    bkrange->to_bkey.len = edge_elem->nbkey;
-    BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange->to_bkey.val);
+    bkrange->to_bkey = BKEY_OF(edge_elem);
 }
 
 static btree_elem_item *do_btree_delete_first_elem(btree_meta_info *info,
@@ -3815,8 +3829,8 @@ ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
     if (info->ccnt > 0) {
         btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
         btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
-        do_btree_copy_bkey(min_bkey_elem, &attrp->minbkey);
-        do_btree_copy_bkey(max_bkey_elem, &attrp->maxbkey);
+        attrp->minbkey = BKEY_OF(min_bkey_elem);
+        attrp->maxbkey = BKEY_OF(max_bkey_elem);
     }
     return ENGINE_SUCCESS;
 }
@@ -3860,10 +3874,9 @@ ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
                     bkey_t curbkeyrange;
                     btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
                     btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
-                    curbkeyrange.len = attrp->maxbkeyrange.len;
-                    BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
-                              min_bkey_elem->data, min_bkey_elem->nbkey,
-                              curbkeyrange.len, curbkeyrange.val);
+                    curbkeyrange = BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
+                                             min_bkey_elem->data, min_bkey_elem->nbkey,
+                                             attrp->maxbkeyrange.len);
                     if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
                                   attrp->maxbkeyrange.val, attrp->maxbkeyrange.len)) {
                         return ENGINE_EBADVALUE;
