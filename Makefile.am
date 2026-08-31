@@ -165,6 +165,8 @@ default_engine_la_SOURCES= \
                     engines/default/prefix.h \
                     engines/default/assoc.c \
                     engines/default/assoc.h \
+                    engines/default/typed_ops.c \
+                    engines/default/typed_ops.h \
                     engines/default/items.c \
                     engines/default/items.h \
                     engines/default/item_clog.c \
