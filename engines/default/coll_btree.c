@@ -33,6 +33,7 @@
 
 #include "default_engine.h"
 #include "item_clog.h"
+#include "typed_ops.h"
 
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
@@ -374,171 +375,6 @@ static inline void do_btree_copy_bkey(btree_elem_item *elem, bkey_t *bkey)
 }
 
 /******************* BKEY COMPARISION CODE *************************/
-static inline int UINT64_COMP(const uint64_t *v1, const uint64_t *v2)
-{
-    if (*v1 == *v2) return  0;
-    if (*v1 <  *v2) return -1;
-    else            return  1;
-}
-
-static inline bool UINT64_ISEQ(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 == *v2) ? true : false);
-}
-
-static inline bool UINT64_ISNE(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 != *v2) ? true : false);
-}
-
-static inline bool UINT64_ISLT(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 <  *v2) ? true : false);
-}
-
-static inline bool UINT64_ISLE(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 <= *v2) ? true : false);
-}
-
-static inline bool UINT64_ISGT(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 >  *v2) ? true : false);
-}
-
-static inline bool UINT64_ISGE(const uint64_t *v1, const uint64_t *v2)
-{
-    return ((*v1 >= *v2) ? true : false);
-}
-
-static inline int BINARY_COMP(const unsigned char *v1, const int nv1,
-                              const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    int min_nv = (nv1 < nv2 ? nv1 : nv2);
-    for (int i=0; i < min_nv; i++) {
-        if (v1[i] == v2[i]) continue;
-        if (v1[i] <  v2[i]) return -1;
-        else                return  1;
-    }
-    if (nv1 == nv2) return  0;
-    if (nv1 <  nv2) return -1;
-    else            return  1;
-}
-
-static inline bool BINARY_ISEQ(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    if (nv1 != nv2) return false;
-    for (int i=0; i < nv1; i++) {
-        if (v1[i] != v2[i]) return false;
-    }
-    return true;
-}
-
-static inline bool BINARY_ISNE(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    if (nv1 != nv2) return true;
-    for (int i=0; i < nv1; i++) {
-        if (v1[i] != v2[i]) return true;
-    }
-    return false;
-}
-
-static inline bool BINARY_ISLT(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    int min_nv = (nv1 < nv2 ? nv1 : nv2);
-    for (int i=0; i < min_nv; i++) {
-        if (v1[i] == v2[i]) continue;
-        if (v1[i] <  v2[i]) return true;
-        else                return false;
-    }
-    if (nv1 < nv2) return true;
-    else           return false;
-}
-
-static inline bool BINARY_ISLE(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    int min_nv = (nv1 < nv2 ? nv1 : nv2);
-    for (int i=0; i < min_nv; i++) {
-        if (v1[i] == v2[i]) continue;
-        if (v1[i] <  v2[i]) return true;
-        else                return false;
-    }
-    if (nv1 <= nv2) return true;
-    else            return false;
-}
-
-static inline bool BINARY_ISGT(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    int min_nv = (nv1 < nv2 ? nv1 : nv2);
-    for (int i=0; i < min_nv; i++) {
-        if (v1[i] == v2[i]) continue;
-        if (v1[i] >  v2[i]) return true;
-        else                return false;
-    }
-    if (nv1 > nv2) return true;
-    else           return false;
-}
-
-static inline bool BINARY_ISGE(const unsigned char *v1, const int nv1,
-                               const unsigned char *v2, const int nv2)
-{
-    assert(nv1 > 0 && nv2 > 0);
-    int min_nv = (nv1 < nv2 ? nv1 : nv2);
-    for (int i=0; i < min_nv; i++) {
-        if (v1[i] == v2[i]) continue;
-        if (v1[i] >  v2[i]) return true;
-        else                return false;
-    }
-    if (nv1 >= nv2) return true;
-    else            return false;
-}
-
-static inline void BINARY_AND(const unsigned char *v1, const unsigned char *v2,
-                              const int length, unsigned char *result)
-{
-    for (int i=0; i < length; i++) {
-        result[i] = v1[i] & v2[i];
-    }
-}
-
-static inline void BINARY_OR(const unsigned char *v1, const unsigned char *v2,
-                             const int length, unsigned char *result)
-{
-    for (int i=0; i < length; i++) {
-        result[i] = v1[i] | v2[i];
-    }
-}
-
-static inline void BINARY_XOR(const unsigned char *v1, const unsigned char *v2,
-                              const int length, unsigned char *result)
-{
-    for (int i=0; i < length; i++) {
-        result[i] = v1[i] ^ v2[i];
-    }
-}
-
-static bool (*UINT64_COMPARE_OP[COMPARE_OP_MAX]) (const uint64_t *v1, const uint64_t *v2)
-    = { UINT64_ISEQ, UINT64_ISNE, UINT64_ISLT, UINT64_ISLE, UINT64_ISGT, UINT64_ISGE };
-
-static bool (*BINARY_COMPARE_OP[COMPARE_OP_MAX]) (const unsigned char *v1, const int nv1,
-                                                  const unsigned char *v2, const int nv2)
-    = { BINARY_ISEQ, BINARY_ISNE, BINARY_ISLT, BINARY_ISLE, BINARY_ISGT, BINARY_ISGE };
-
-static void (*BINARY_BITWISE_OP[BITWISE_OP_MAX]) (const unsigned char *v1, const unsigned char *v2,
-                                                  const int length, unsigned char *result)
-    = { BINARY_AND, BINARY_OR, BINARY_XOR };
-
 #define BKEY_COMP(bk1, nbk1, bk2, nbk2) \
         (((nbk1)==0 && (nbk2)==0) ? UINT64_COMP((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
                                   : BINARY_COMP((bk1),(nbk1),(bk2),(nbk2)))
@@ -586,121 +422,17 @@ static int btree_elem_cmp(const void *bkey, uint32_t nbkey, const btree_elem_ite
 /******************* BKEY COMPARISION CODE *************************/
 
 /**************** MAX BKEY RANGE MANIPULATION **********************/
-static inline void UINT64_COPY(const uint64_t *v, uint64_t *result)
-{
-    *result = *v;
-}
-
-static inline void UINT64_DIFF(const uint64_t *v1, const uint64_t *v2, uint64_t *result)
-{
-    assert(*v1 >= *v2);
-    *result = *v1 - *v2;
-}
-
-#if 0 // OLD_CODE
-static inline void UINT64_INCR(uint64_t *v)
-{
-    assert(*v < UINT64_MAX);
-    *v += 1;
-}
-#endif
-
-static inline void UINT64_DECR(uint64_t *v)
-{
-    assert(*v > 0);
-    *v -= 1;
-}
-
-static inline void BINARY_COPY(const unsigned char *v, const int length,
-                               unsigned char *result)
-{
-    if (length > 0)
-        memcpy(result, v, length);
-}
-
-static inline void BINARY_DIFF(unsigned char *v1, const uint8_t nv1,
-                               unsigned char *v2, const uint8_t nv2,
-                               const int length, unsigned char *result)
-{
-    assert(length > 0);
-    unsigned char bkey1_space[MAX_BKEY_LENG];
-    unsigned char bkey2_space[MAX_BKEY_LENG];
-    int i, subtraction;
-
-    if (nv1 < length) {
-        memcpy(bkey1_space, v1, nv1);
-        for (i=nv1; i<length; i++)
-            bkey1_space[i] = 0x00;
-        v1 = bkey1_space;
-    }
-    if (nv2 < length) {
-        memcpy(bkey2_space, v2, nv2);
-        for (i=nv2; i<length; i++)
-            bkey2_space[i] = 0x00;
-        v2 = bkey2_space;
-    }
-
-    /* assume that the value of v1 >= the value of v2 */
-    subtraction = 0;
-    for (i = (length-1); i >= 0; i--) {
-        if (subtraction == 0) {
-            if (v1[i] >= v2[i]) {
-                result[i] = v1[i] - v2[i];
-            } else {
-                result[i] = 0xFF - v2[i] + v1[i] + 1;
-                subtraction = 1;
-            }
-        } else {
-            if (v1[i] > v2[i]) {
-                result[i] = v1[i] - v2[i] - 1;
-                subtraction = 0;
-            } else {
-                result[i] = 0xFF - v2[i] + v1[i];
-            }
-        }
-    }
-}
-
-#if 0 // OLD_CODE
-static inline void BINARY_INCR(unsigned char *v, const int length)
-{
-    assert(length > 0);
-    int i;
-    for (i = (length-1); i >= 0; i--) {
-        if (v[i] < 0xFF) {
-            v[i] += 1;
-            break;
-        }
-        v[i] = 0x00;
-    }
-    assert(i >= 0);
-}
-#endif
-
-static inline void BINARY_DECR(unsigned char *v, const int length)
-{
-    assert(length > 0);
-    int i;
-    for (i = (length-1); i >= 0; i--) {
-        if (v[i] > 0x00) {
-            v[i] -= 1;
-            break;
-        }
-        v[i] = 0xFF;
-    }
-    assert(i >= 0);
-}
-
 #define BKEY_COPY(bk, nbk, res) \
         ((nbk)==0 ? UINT64_COPY((const uint64_t*)(bk), (uint64_t*)(res)) \
                   : BINARY_COPY((bk), (nbk), (res)))
+
 #define BKEY_DIFF(bk1, nbk1, bk2, nbk2, len, res) \
         ((len)==0 ? UINT64_DIFF((const uint64_t*)(bk1), (const uint64_t*)(bk2), (uint64_t*)(res)) \
                   : BINARY_DIFF((bk1), (nbk1), (bk2), (nbk2), (len), (res)))
-#if 0 // OLD_CODE
+
 #define BKEY_INCR(bk, nbk) \
         ((nbk)==0 ? UINT64_INCR((uint64_t*)(bk)) : BINARY_INCR((bk), (nbk)))
-#endif
+
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
@@ -4449,13 +4181,6 @@ ENGINE_ERROR_CODE item_btree_coll_init(void *engine_ptr)
     bkey_binary_min[0] = 0x00;
     for (int i=0; i < MAX_BKEY_LENG; i++) {
         bkey_binary_max[i] = 0xFF;
-    }
-
-    /* remove unused function warnings */
-    if (1) {
-        uint64_t val1 = 10;
-        uint64_t val2 = 20;
-        assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
     }
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM btree module initialized.\n");
