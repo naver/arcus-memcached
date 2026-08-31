@@ -188,20 +188,20 @@ static int do_make_bkeystring(char *buffer,
 {
     char *bufptr = buffer;
     /* bkey */
-    if (bkrange->from_nbkey > 0) { /* hexadecimal */
+    if (bkrange->from_bkey.len > 0) { /* hexadecimal */
         memcpy(bufptr, "0x", 2); bufptr += 2;
-        safe_hexatostr(bkrange->from_bkey, bkrange->from_nbkey, bufptr);
+        safe_hexatostr(bkrange->from_bkey.val, bkrange->from_bkey.len, bufptr);
         bufptr += strlen(bufptr);
-        if (bkrange->to_nbkey != BKEY_NULL) { /* range */
+        if (bkrange->to_bkey.len != BKEY_NULL) { /* range */
             memcpy(bufptr, "..0x", 4); bufptr += 4;
-            safe_hexatostr(bkrange->to_bkey, bkrange->to_nbkey, bufptr);
+            safe_hexatostr(bkrange->to_bkey.val, bkrange->to_bkey.len, bufptr);
             bufptr += strlen(bufptr);
         }
     } else { /* 64bit unsigned integer */
-        const unsigned char* bkptr = bkrange->from_bkey;
+        const unsigned char* bkptr = bkrange->from_bkey.val;
         bufptr += sprintf(bufptr, "%"PRIu64"", *(uint64_t*)bkptr);
-        if (bkrange->to_nbkey != BKEY_NULL) { /* range */
-            bkptr = bkrange->to_bkey;
+        if (bkrange->to_bkey.len != BKEY_NULL) { /* range */
+            bkptr = bkrange->to_bkey.val;
             bufptr += sprintf(bufptr, "..%"PRIu64"", *(uint64_t*)bkptr);
         }
     }

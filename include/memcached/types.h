@@ -326,14 +326,8 @@ extern "C" {
 
     /* bkey_range structure */
     typedef struct {
-        /******
         bkey_t   from_bkey;
         bkey_t   to_bkey;
-        ******/
-        unsigned char from_bkey[MAX_BKEY_LENG];
-        unsigned char to_bkey[MAX_BKEY_LENG];
-        uint8_t from_nbkey;
-        uint8_t to_nbkey;
     } bkey_range;
 
     /* eflag_filter structure */

@@ -2557,10 +2557,10 @@ static void process_bop_mget_complete(conn *c)
         ret = ENGINE_ENOMEM;
     }
     if (ret == ENGINE_SUCCESS) {
-        if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
-            memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
-                   (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
-            c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
+        if (c->coll_bkrange.to_bkey.len == BKEY_NULL) {
+            memcpy(c->coll_bkrange.to_bkey.val, c->coll_bkrange.from_bkey.val,
+                   (c->coll_bkrange.from_bkey.len==0 ? sizeof(uint64_t) : c->coll_bkrange.from_bkey.len));
+            c->coll_bkrange.to_bkey.len = c->coll_bkrange.from_bkey.len;
         }
         for (k = 0; k < c->coll_numkeys; k++) {
             ret = process_bop_mget_single(c, key_tokens[k].value, key_tokens[k].length,
@@ -2782,10 +2782,10 @@ static void process_bop_smget_complete(conn *c)
         ret = ENGINE_ENOMEM;
     }
     if (ret == ENGINE_SUCCESS) {
-        if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
-            memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
-                   (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
-            c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
+        if (c->coll_bkrange.to_bkey.len == BKEY_NULL) {
+            memcpy(c->coll_bkrange.to_bkey.val, c->coll_bkrange.from_bkey.val,
+                   (c->coll_bkrange.from_bkey.len==0 ? sizeof(uint64_t) : c->coll_bkrange.from_bkey.len));
+            c->coll_bkrange.to_bkey.len = c->coll_bkrange.from_bkey.len;
         }
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
@@ -5690,9 +5690,9 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         real_nbkey = req->message.body.nbkey;
     }
     /* build bkey range */
-    memcpy(c->coll_bkrange.from_bkey, req->message.body.bkey, real_nbkey);
-    c->coll_bkrange.from_nbkey = req->message.body.nbkey;
-    c->coll_bkrange.to_nbkey   = BKEY_NULL;
+    memcpy(c->coll_bkrange.from_bkey.val, req->message.body.bkey, real_nbkey);
+    c->coll_bkrange.from_bkey.len = req->message.body.nbkey;
+    c->coll_bkrange.to_bkey.len   = BKEY_NULL;
     /* build elem update */
     c->coll_eupdate.offset = req->message.body.offset;
     c->coll_eupdate.bitwop = req->message.body.bitwop;
@@ -5775,19 +5775,19 @@ static void process_bin_bop_delete(conn *c)
     protocol_binary_request_bop_delete* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
     eflag_filter *efilter = &req->message.body.efilter;
-    if (bkrange->from_nbkey == 0) {
+    if (bkrange->from_bkey.len == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->from_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->from_bkey = ntohll(*(uint64_t*)bkrange->from_bkey);
+        memcpy(bkrange->from_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->from_bkey.val = ntohll(*(uint64_t*)bkrange->from_bkey.val);
     }
-    if (bkrange->to_nbkey   == 0) {
+    if (bkrange->to_bkey.len   == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->to_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->to_bkey   = ntohll(*(uint64_t*)bkrange->to_bkey);
+        memcpy(bkrange->to_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->to_bkey.val   = ntohll(*(uint64_t*)bkrange->to_bkey.val);
     }
     req->message.body.count = ntohl(req->message.body.count);
 
@@ -5927,19 +5927,19 @@ static void process_bin_bop_get(conn *c)
     protocol_binary_request_bop_get* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
     eflag_filter *efilter = &req->message.body.efilter;
-    if (bkrange->from_nbkey == 0) {
+    if (bkrange->from_bkey.len == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->from_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->from_bkey = ntohll(*(uint64_t*)bkrange->from_bkey);
+        memcpy(bkrange->from_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->from_bkey.val = ntohll(*(uint64_t*)bkrange->from_bkey.val);
     }
-    if (bkrange->to_nbkey   == 0) {
+    if (bkrange->to_bkey.len   == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->to_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->to_bkey   = ntohll(*(uint64_t*)bkrange->to_bkey);
+        memcpy(bkrange->to_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->to_bkey.val   = ntohll(*(uint64_t*)bkrange->to_bkey.val);
     }
     req->message.body.offset = ntohl(req->message.body.offset);
     req->message.body.count  = ntohl(req->message.body.count);
@@ -6024,19 +6024,19 @@ static void process_bin_bop_count(conn *c)
     protocol_binary_request_bop_count* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
     eflag_filter *efilter = &req->message.body.efilter;
-    if (bkrange->from_nbkey == 0) {
+    if (bkrange->from_bkey.len == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->from_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->from_bkey = ntohll(*(uint64_t*)bkrange->from_bkey);
+        memcpy(bkrange->from_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->from_bkey.val = ntohll(*(uint64_t*)bkrange->from_bkey.val);
     }
-    if (bkrange->to_nbkey   == 0) {
+    if (bkrange->to_bkey.len   == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->to_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->to_bkey   = ntohll(*(uint64_t*)bkrange->to_bkey);
+        memcpy(bkrange->to_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->to_bkey.val   = ntohll(*(uint64_t*)bkrange->to_bkey.val);
     }
 
     if (settings.verbose > 1) {
@@ -6123,19 +6123,19 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
     /* fix byteorder in the request */
     protocol_binary_request_bop_mkeys* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
-    if (bkrange->from_nbkey == 0) {
+    if (bkrange->from_bkey.len == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->from_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->from_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->from_bkey = ntohll(*(uint64_t*)bkrange->from_bkey);
+        memcpy(bkrange->from_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->from_bkey.val = ntohll(*(uint64_t*)bkrange->from_bkey.val);
     }
-    if (bkrange->to_nbkey   == 0) {
+    if (bkrange->to_bkey.len   == 0) {
         uint64_t bkey_temp;
-        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey, sizeof(uint64_t));
+        memcpy((unsigned char*)&bkey_temp, bkrange->to_bkey.val, sizeof(uint64_t));
         bkey_temp = ntohll(bkey_temp);
-        memcpy(bkrange->to_bkey, (unsigned char*)&bkey_temp, sizeof(uint64_t));
-        //*(uint64_t*)bkrange->to_bkey   = ntohll(*(uint64_t*)bkrange->to_bkey);
+        memcpy(bkrange->to_bkey.val, (unsigned char*)&bkey_temp, sizeof(uint64_t));
+        //*(uint64_t*)bkrange->to_bkey.val   = ntohll(*(uint64_t*)bkrange->to_bkey.val);
     }
     req->message.body.req_offset = ntohl(req->message.body.req_offset);
     req->message.body.req_count  = ntohl(req->message.body.req_count);
@@ -6287,10 +6287,10 @@ static void process_bin_bop_smget_complete(conn *c)
         ret = ENGINE_ENOMEM;
     }
     if (ret == ENGINE_SUCCESS) {
-        if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
-            memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
-                   (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
-            c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
+        if (c->coll_bkrange.to_bkey.len == BKEY_NULL) {
+            memcpy(c->coll_bkrange.to_bkey.val, c->coll_bkrange.from_bkey.val,
+                   (c->coll_bkrange.from_bkey.len==0 ? sizeof(uint64_t) : c->coll_bkrange.from_bkey.len));
+            c->coll_bkrange.to_bkey.len = c->coll_bkrange.from_bkey.len;
         }
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
@@ -12092,31 +12092,31 @@ static inline int get_bkey_range_from_str(const char *str, bkey_range *bkrange)
         char *nxt = delimiter + 2;
         *delimiter = '\0';
         if (strncmp(str, "0x", 2) == 0 && strncmp(nxt, "0x", 2) == 0) {
-            if (! safe_strtohexa(str+2, bkrange->from_bkey, MAX_BKEY_LENG) ||
-                ! safe_strtohexa(nxt+2, bkrange->to_bkey,   MAX_BKEY_LENG)) {
+            if (! safe_strtohexa(str+2, bkrange->from_bkey.val, MAX_BKEY_LENG) ||
+                ! safe_strtohexa(nxt+2, bkrange->to_bkey.val,   MAX_BKEY_LENG)) {
                 *delimiter = '.'; return -1;
             }
-            bkrange->from_nbkey = strlen(str+2)/2;
-            bkrange->to_nbkey   = strlen(nxt+2)/2;
+            bkrange->from_bkey.len = strlen(str+2)/2;
+            bkrange->to_bkey.len   = strlen(nxt+2)/2;
         } else {
-            if (! safe_strtoull(str, (uint64_t*)bkrange->from_bkey) ||
-                ! safe_strtoull(nxt, (uint64_t*)bkrange->to_bkey)) {
+            if (! safe_strtoull(str, (uint64_t*)bkrange->from_bkey.val) ||
+                ! safe_strtoull(nxt, (uint64_t*)bkrange->to_bkey.val)) {
                 *delimiter = '.'; return -1;
             }
-            bkrange->from_nbkey = bkrange->to_nbkey = 0;
+            bkrange->from_bkey.len = bkrange->to_bkey.len = 0;
         }
         *delimiter = '.';
     } else { /* single index */
         if (strncmp(str, "0x", 2) == 0) { /* hexadeciaml bkey */
-            if (! safe_strtohexa(str+2, bkrange->from_bkey, MAX_BKEY_LENG))
+            if (! safe_strtohexa(str+2, bkrange->from_bkey.val, MAX_BKEY_LENG))
                 return -1;
-            bkrange->from_nbkey = strlen(str+2)/2;
+            bkrange->from_bkey.len = strlen(str+2)/2;
         } else { /* 64 bit unsigned integer */
-            if (! safe_strtoull(str, (uint64_t*)bkrange->from_bkey))
+            if (! safe_strtoull(str, (uint64_t*)bkrange->from_bkey.val))
                 return -1;
-            bkrange->from_nbkey = 0;
+            bkrange->from_bkey.len = 0;
         }
-        bkrange->to_nbkey = BKEY_NULL;
+        bkrange->to_bkey.len = BKEY_NULL;
     }
     return 0;
 }
@@ -12743,7 +12743,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         /* Only single bkey supported */
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0 ||
-            c->coll_bkrange.to_nbkey != BKEY_NULL) {
+            c->coll_bkrange.to_bkey.len != BKEY_NULL) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12895,7 +12895,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
-            (c->coll_bkrange.to_nbkey != BKEY_NULL) ||
+            (c->coll_bkrange.to_bkey.len != BKEY_NULL) ||
             (! safe_strtoull(tokens[BOP_KEY_TOKEN+2].value, &delta)) || (delta < 1)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -13135,7 +13135,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         CHECK_NTOKENS_EQ(ntokens, 6);
 
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
-            (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
+            (c->coll_bkrange.to_bkey.len != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -13160,7 +13160,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         CHECK_NTOKENS(ntokens, 6, 7);
 
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
-            (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
+            (c->coll_bkrange.to_bkey.len != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
