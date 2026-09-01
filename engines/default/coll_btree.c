@@ -33,7 +33,7 @@
 
 #include "default_engine.h"
 #include "item_clog.h"
-#include "typed_ops.h"
+#include "bplus_tree.h"
 
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
@@ -50,32 +50,10 @@ static inline void UNLOCK_CACHE(void)
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
-/* bkey type */
-#define BKEY_TYPE_UNKNOWN 0
-#define BKEY_TYPE_UINT64  1
-#define BKEY_TYPE_BINARY  2
-
-/* get bkey real size */
-#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
-/* bkey range type */
-#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
-#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
-#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
-
 /* overflow type */
 #define OVFL_TYPE_NONE  0
 #define OVFL_TYPE_COUNT 1
 #define OVFL_TYPE_RANGE 2
-
-/* btree scan direction */
-#define BTREE_DIRECTION_PREV 2
-#define BTREE_DIRECTION_NEXT 1
-#define BTREE_DIRECTION_NONE 0
-
-/* btree element item or btree node item */
-#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
-#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
 /* btree element position */
 typedef struct _btree_elem_posi {
@@ -374,35 +352,6 @@ static inline void do_btree_copy_bkey(btree_elem_item *elem, bkey_t *bkey)
     }
 }
 
-/******************* BKEY COMPARISION CODE *************************/
-#define BKEY_COMP(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_COMP((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_COMP((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISEQ(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISEQ((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISEQ((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISNE(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISNE((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISNE((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISLT(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISLT((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISLT((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISLE(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISLE((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISLE((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISGT(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISGT((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISGT((bk1),(nbk1),(bk2),(nbk2)))
-
-#define BKEY_ISGE(bk1, nbk1, bk2, nbk2) \
-        (((nbk1)==0 && (nbk2)==0) ? UINT64_ISGE((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
-                                  : BINARY_ISGE((bk1),(nbk1),(bk2),(nbk2)))
-
 static const void *btree_get_bkey(const btree_elem_item *elem, uint32_t *nbkey)
 {
     *nbkey = elem->nbkey;
@@ -414,29 +363,6 @@ static const void *btree_get_eflag(const btree_elem_item *elem, uint32_t *neflag
     *neflag = elem->neflag;
     return elem->data + BTREE_REAL_NBKEY(elem->nbkey);
 }
-
-static int btree_elem_cmp(const void *bkey, uint32_t nbkey, const btree_elem_item *elem)
-{
-    return BKEY_COMP(bkey, nbkey, elem->data, elem->nbkey);
-}
-/******************* BKEY COMPARISION CODE *************************/
-
-/**************** MAX BKEY RANGE MANIPULATION **********************/
-#define BKEY_COPY(bk, nbk, res) \
-        ((nbk)==0 ? UINT64_COPY((const uint64_t*)(bk), (uint64_t*)(res)) \
-                  : BINARY_COPY((bk), (nbk), (res)))
-
-#define BKEY_DIFF(bk1, nbk1, bk2, nbk2, len, res) \
-        ((len)==0 ? UINT64_DIFF((const uint64_t*)(bk1), (const uint64_t*)(bk2), (uint64_t*)(res)) \
-                  : BINARY_DIFF((bk1), (nbk1), (bk2), (nbk2), (len), (res)))
-
-#define BKEY_INCR(bk, nbk) \
-        ((nbk)==0 ? UINT64_INCR((uint64_t*)(bk)) : BINARY_INCR((bk), (nbk)))
-
-#define BKEY_DECR(bk, nbk) \
-        ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
-
-/**************** MAX BKEY RANGE MANIPULATION **********************/
 
 static int do_btree_bkey_range_type(const bkey_range *bkrange)
 {
@@ -578,7 +504,7 @@ static btree_elem_item *bplus_elem_find(btree_indx_node *root,
     while (left <= right) {
         mid  = (left + right) / 2;
         elem = BTREE_GET_ELEM_ITEM(node, mid);
-        comp = btree_elem_cmp(bkey, nbkey, elem);
+        comp = BKEY_COMP(bkey, nbkey, elem->data, elem->nbkey);
         if (comp == 0) break;
         if (comp <  0) right = mid-1;
         else           left  = mid+1;
@@ -865,7 +791,7 @@ static void do_bplus_consistency_check(btree_indx_node *node, uint32_t ecount, b
             for (i = 0; i < node->used_count; i++) {
                 c_elem = BTREE_GET_ELEM_ITEM(node, i);
                 if (p_elem != NULL) {
-                    comp = btree_elem_cmp(p_elem->data, p_elem->nbkey, c_elem);
+                    comp = BKEY_COMP(p_elem->data, p_elem->nbkey, c_elem->data, c_elem->nbkey);
                     assert(comp < 0);
                 }
                 p_elem = c_elem;
