@@ -1587,8 +1587,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     sm_unlock();
 }
 
-/* Close the ZK connection and die. Do not do anything that may
- * block here such as deleting the ephemeral znode.
+/* Shut down the zk threads and die. The ZK connection is closed by the SM
+ * state thread. See sm_state_thread().
+ * Do not do anything that may block here such as deleting the ephemeral znode.
  * It will be deleted, after closing the ZK connection(or session).
  */
 void arcus_zk_final(const char *msg)
@@ -1596,51 +1597,27 @@ void arcus_zk_final(const char *msg)
     arcus_zk_shutdown = 1;
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_final(%s)\n", msg);
 
-    pthread_mutex_lock(&zk_lock);
-    if (main_zk->zh) {
-        /* wake up the SM state thread if it's sleeping */
-        sm_wakeup(false);
+    /* wake up the SM state thread if it's sleeping */
+    sm_wakeup(false);
 
-        /* wait a maximum of 1000 msec */
-        int elapsed_msec = 0;
-        while (elapsed_msec <= 1000) {
-            if (elapsed_msec == 0) {
-                /* the first check: go below */
-            } else {
-                usleep(10000); // 10ms wait
-                elapsed_msec += 10;
-            }
-            /* Do not call zookeeper_close (arcus_exit) and zoo_wget_children at
-             * the same time.  Otherwise, this thread (main thread) and the watcher
-             * thread (zoo_wget_children) may hang forever until the user manually
-             * kills the process.  The root cause is within the zookeeper library.
-             * Its handling of concurrent API calls like zoo_wget_children and
-             * zookeeper_close still has holes...
-             */
-            /* If the watcher thread (zoo_wget_children) is running now, wait for
-             * one second.  Either it completes, or it at least registers
-             * sync_completion and blocks.  In the latter case, zookeeper_close
-             * aborts all sync_completion's, which then wakes up the blocking
-             * watcher thread.  zoo_wget_children returns an error.
-             */
-            if (sm_info.state_running)
-                continue;
-#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
-            if (sm_info.timer_running)
-                continue;
-#endif
-            mc_logger->log(EXTENSION_LOG_INFO, NULL, "zk threads terminated\n");
-            break;
+    /* wait a maximum of 1000 msec */
+    int elapsed_msec = 0;
+    while (elapsed_msec <= 1000) {
+        if (elapsed_msec == 0) {
+            /* the first check: go below */
+        } else {
+            usleep(10000); // 10ms wait
+            elapsed_msec += 10;
         }
-
-        /* close zk connection */
-        zookeeper_close(main_zk->zh);
-        main_zk->zh = NULL;
-        free(main_zk->ensemble_list);
-        main_zk->ensemble_list = NULL;
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
+        if (sm_info.state_running)
+            continue;
+#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
+        if (sm_info.timer_running)
+            continue;
+#endif
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "zk threads terminated\n");
+        break;
     }
-    pthread_mutex_unlock(&zk_lock);
 }
 
 void arcus_zk_destroy(void)
@@ -1935,9 +1912,20 @@ static void *sm_state_thread(void *arg)
             if (sm_info.mc_pause) continue;
         }
     }
-    sm_info.state_running = false;
+
+    pthread_mutex_lock(&zk_lock);
+    if (main_zk->zh) {
+        zookeeper_close(main_zk->zh);
+        main_zk->zh = NULL;
+        free(main_zk->ensemble_list);
+        main_zk->ensemble_list = NULL;
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
+    }
+    pthread_mutex_unlock(&zk_lock);
 
     deallocate_String_vector(&sm_info.sv_cache_list);
+    sm_info.state_running = false;
+
     if (shutdown_by_me) {
         arcus_zk_final("SM state failure");
         arcus_zk_destroy();
