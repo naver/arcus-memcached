@@ -35,6 +35,7 @@ typedef struct {
 int  arcus_hb_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger,
                    void (*cb_shutdown_server)(void));
 void arcus_hb_final(void);
+bool arcus_hb_finalized(void);
 
 int  arcus_hb_get_timeout(void);
 int  arcus_hb_set_timeout(int timeout);

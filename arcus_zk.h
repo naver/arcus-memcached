@@ -50,6 +50,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #endif
                    ENGINE_HANDLE_V1 *engine);
 void arcus_zk_final(const char *msg);
+bool arcus_zk_finalized(void);
 void arcus_zk_destroy(void);
 
 int  arcus_zk_set_ensemble(char *ensemble_list);
