@@ -23,6 +23,15 @@
 #include <assert.h>
 #include <string.h>
 
+/* Layout contract for bplus tree elements.
+ * Any elem_item used with bplus_tree functions must begin with these
+ * fields in this exact order. Fields beyond this point may differ. */
+typedef struct _bplus_elem_item {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;        /* which slab class we're in */
+    uint8_t  linked;             /* link count */
+} bplus_elem_item;
+
 #define BPLUS_MAX_DEPTH  7
 #define BPLUS_ITEM_COUNT 32 /* Recommend BPLUS_ITEM_COUNT >= 8 */
 
@@ -67,8 +76,8 @@ typedef struct _bplus_indx_node {
 #define BTREE_DIRECTION_NEXT 1
 #define BTREE_DIRECTION_NONE 0
 
-/* btree element item or btree node item */
-#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
+/* bplus element item or bplus node item */
+#define BPLUS_GET_ELEM_ITEM(node, indx) ((bplus_elem_item *)((node)->item[indx]))
 #define BPLUS_GET_NODE_ITEM(node, indx) ((bplus_indx_node *)((node)->item[indx]))
 
 #define BKEY_COMP(bk1, nbk1, bk2, nbk2) \
