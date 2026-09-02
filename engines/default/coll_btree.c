@@ -57,7 +57,7 @@ static inline void UNLOCK_CACHE(void)
 
 /* btree element position */
 typedef struct _btree_elem_posi {
-    btree_indx_node *node;
+    bplus_indx_node *node;
     uint16_t         indx;
     /* It is used temporarily in order to check
      * if the found bkey is equal to from_bkey or to_bkey of given bkey range
@@ -232,11 +232,11 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static btree_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
+static bplus_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
 {
-    size_t ntotal = (node_depth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
+    size_t ntotal = (node_depth > 0 ? sizeof(bplus_indx_node) : sizeof(bplus_leaf_node));
 
-    btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
+    bplus_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (node != NULL) {
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
@@ -245,16 +245,16 @@ static btree_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
         node->ndepth      = node_depth;
         node->used_count  = 0;
         node->prev = node->next = NULL;
-        memset(node->item, 0, BTREE_ITEM_COUNT*sizeof(void*));
+        memset(node->item, 0, BPLUS_ITEM_COUNT*sizeof(void*));
         if (node_depth > 0)
-            memset(node->ecnt, 0, BTREE_ITEM_COUNT*sizeof(uint16_t));
+            memset(node->ecnt, 0, BPLUS_ITEM_COUNT*sizeof(uint16_t));
     }
     return node;
 }
 
-static void do_bplus_node_free(btree_indx_node *node)
+static void do_bplus_node_free(bplus_indx_node *node)
 {
-    size_t ntotal = (node->ndepth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
+    size_t ntotal = (node->ndepth > 0 ? sizeof(bplus_indx_node) : sizeof(bplus_leaf_node));
     do_item_mem_free(node, ntotal);
 }
 
@@ -295,25 +295,25 @@ static void do_btree_elem_release(btree_elem_item *elem)
     }
 }
 
-static inline btree_elem_item *bplus_get_first_elem(btree_indx_node *node)
+static inline btree_elem_item *bplus_get_first_elem(bplus_indx_node *node)
 {
     while (node->ndepth > 0) {
-        node = (btree_indx_node *)(node->item[0]);
+        node = (bplus_indx_node *)(node->item[0]);
     }
     assert(node->ndepth == 0);
     return (btree_elem_item *)(node->item[0]);
 }
 
-static inline btree_elem_item *bplus_get_last_elem(btree_indx_node *node)
+static inline btree_elem_item *bplus_get_last_elem(bplus_indx_node *node)
 {
     while (node->ndepth > 0) {
-        node = (btree_indx_node *)(node->item[node->used_count-1]);
+        node = (bplus_indx_node *)(node->item[node->used_count-1]);
     }
     assert(node->ndepth == 0);
     return (btree_elem_item *)(node->item[node->used_count-1]);
 }
 
-static inline btree_indx_node *bplus_get_first_leaf(btree_indx_node *node,
+static inline bplus_indx_node *bplus_get_first_leaf(bplus_indx_node *node,
                                                     btree_elem_posi *path)
 {
     while (node->ndepth > 0) {
@@ -321,13 +321,13 @@ static inline btree_indx_node *bplus_get_first_leaf(btree_indx_node *node,
             path[node->ndepth].node = node;
             path[node->ndepth].indx = 0;
         }
-        node = (btree_indx_node *)(node->item[0]);
+        node = (bplus_indx_node *)(node->item[0]);
     }
     assert(node->ndepth == 0);
     return node;
 }
 
-static inline btree_indx_node *bplus_get_last_leaf(btree_indx_node *node,
+static inline bplus_indx_node *bplus_get_last_leaf(bplus_indx_node *node,
                                                    btree_elem_posi *path)
 {
     while (node->ndepth > 0) {
@@ -335,7 +335,7 @@ static inline btree_indx_node *bplus_get_last_leaf(btree_indx_node *node,
             path[node->ndepth].node = node;
             path[node->ndepth].indx = node->used_count-1;
         }
-        node = (btree_indx_node *)(node->item[node->used_count-1]);
+        node = (bplus_indx_node *)(node->item[node->used_count-1]);
     }
     assert(node->ndepth == 0);
     return node;
@@ -396,42 +396,42 @@ static inline void do_bplus_decr_posi(btree_elem_posi *posi)
         if (posi->node != NULL)
             posi->indx = posi->node->used_count-1;
         else
-            posi->indx = BTREE_ITEM_COUNT;
+            posi->indx = BPLUS_ITEM_COUNT;
     }
 }
 
 static void do_bplus_incr_path(btree_elem_posi *path, int depth)
 {
-    btree_indx_node *saved_node;
+    bplus_indx_node *saved_node;
 
-    while (depth < BTREE_MAX_DEPTH) {
+    while (depth < BPLUS_MAX_DEPTH) {
         saved_node = path[depth].node;
         do_bplus_incr_posi(&path[depth]);
         if (path[depth].node == saved_node) break;
         depth += 1;
     }
-    assert(depth < BTREE_MAX_DEPTH);
+    assert(depth < BPLUS_MAX_DEPTH);
 }
 
 static void do_bplus_decr_path(btree_elem_posi *path, int depth)
 {
-    btree_indx_node *saved_node;
+    bplus_indx_node *saved_node;
 
-    while (depth < BTREE_MAX_DEPTH) {
+    while (depth < BPLUS_MAX_DEPTH) {
         saved_node = path[depth].node;
         do_bplus_decr_posi(&path[depth]);
         if (path[depth].node == saved_node) break;
         depth += 1;
     }
-    assert(depth < BTREE_MAX_DEPTH);
+    assert(depth < BPLUS_MAX_DEPTH);
 }
 
-static btree_indx_node *do_bplus_find_leaf(btree_indx_node *root,
+static bplus_indx_node *do_bplus_find_leaf(bplus_indx_node *root,
                                            const void *bkey, const uint32_t nbkey,
                                            btree_elem_posi *path,
                                            btree_elem_item **found_elem)
 {
-    btree_indx_node *node = root;
+    bplus_indx_node *node = root;
     btree_elem_item *elem;
     int mid, left, right, comp;
     const void *sep_bkey;
@@ -469,12 +469,12 @@ static btree_indx_node *do_bplus_find_leaf(btree_indx_node *root,
             path[node->ndepth].node = node;
             path[node->ndepth].indx = right;
         }
-        node = (btree_indx_node *)(node->item[right]);
+        node = (bplus_indx_node *)(node->item[right]);
     }
     return node;
 }
 
-static btree_elem_item *bplus_elem_find(btree_indx_node *root,
+static btree_elem_item *bplus_elem_find(bplus_indx_node *root,
                                         const void *bkey, uint32_t nbkey,
                                         btree_elem_posi *path)
 {
@@ -482,7 +482,7 @@ static btree_elem_item *bplus_elem_find(btree_indx_node *root,
         return NULL;
     }
 
-    btree_indx_node *node;
+    bplus_indx_node *node;
     btree_elem_item *elem;
     int mid, left, right, comp;
 
@@ -521,11 +521,11 @@ static btree_elem_item *bplus_elem_find(btree_indx_node *root,
     }
 }
 
-static btree_elem_item *bplus_find_first(btree_indx_node *root,
+static btree_elem_item *bplus_find_first(bplus_indx_node *root,
                                          const int bkrtype, const bkey_range *bkrange,
                                          btree_elem_posi *path, const bool path_flag)
 {
-    btree_indx_node *node;
+    bplus_indx_node *node;
     btree_elem_item *elem;
     int mid, left, right, comp;
     const void *bkey;
@@ -602,7 +602,7 @@ static btree_elem_item *bplus_find_first(btree_indx_node *root,
                         path[0].indx = node->prev->used_count-1;
                         if (path_flag) do_bplus_decr_path(path, 1);
                     } else {
-                        path[0].indx = BTREE_ITEM_COUNT;
+                        path[0].indx = BPLUS_ITEM_COUNT;
                     }
                 }
             }
@@ -640,7 +640,7 @@ static btree_elem_item *bplus_find_first(btree_indx_node *root,
                     path[0].indx = node->prev->used_count-1;
                     if (path_flag) do_bplus_decr_path(path, 1);
                 } else {
-                    path[0].indx = BTREE_ITEM_COUNT;
+                    path[0].indx = BPLUS_ITEM_COUNT;
                 }
             }
             if (path[0].node == NULL) {
@@ -749,7 +749,7 @@ static inline bool bplus_elem_filter(btree_elem_item *elem, const eflag_filter *
     }
 }
 
-static void do_bplus_consistency_check(btree_indx_node *node, uint32_t ecount, bool detail)
+static void do_bplus_consistency_check(bplus_indx_node *node, uint32_t ecount, bool detail)
 {
     uint32_t i, tot_ecnt;
 
@@ -769,7 +769,7 @@ static void do_bplus_consistency_check(btree_indx_node *node, uint32_t ecount, b
         for (i = 0; i < node->used_count; i++) {
             assert(node->item[i] != NULL);
             assert(node->ecnt[i] > 0);
-            do_bplus_consistency_check((btree_indx_node*)node->item[i], node->ecnt[i], detail);
+            do_bplus_consistency_check((bplus_indx_node*)node->item[i], node->ecnt[i], detail);
             tot_ecnt += node->ecnt[i];
         }
         assert(tot_ecnt == ecount);
@@ -809,8 +809,8 @@ static void do_bplus_consistency_check(btree_indx_node *node, uint32_t ecount, b
     }
 }
 
-static void do_bplus_node_item_move(btree_indx_node *c_node, /* current node */
-                                    btree_indx_node *n_node, /* neighbor node */
+static void do_bplus_node_item_move(bplus_indx_node *c_node, /* current node */
+                                    bplus_indx_node *n_node, /* neighbor node */
                                     int direction, int move_count)
 {
     assert(move_count > 0);
@@ -866,9 +866,9 @@ static void do_bplus_node_item_move(btree_indx_node *c_node, /* current node */
 static void do_bplus_ecnt_move_split(btree_elem_posi *path, int depth, int direction, uint32_t elem_count)
 {
     btree_elem_posi  posi;
-    btree_indx_node *saved_node;
+    bplus_indx_node *saved_node;
 
-    while (depth < BTREE_MAX_DEPTH) {
+    while (depth < BPLUS_MAX_DEPTH) {
         posi = path[depth];
         posi.node->ecnt[posi.indx] -= elem_count;
 
@@ -882,15 +882,15 @@ static void do_bplus_ecnt_move_split(btree_elem_posi *path, int depth, int direc
         if (saved_node == posi.node) break;
         depth += 1;
     }
-    assert(depth < BTREE_MAX_DEPTH);
+    assert(depth < BPLUS_MAX_DEPTH);
 }
 
 static void do_bplus_ecnt_move_merge(btree_elem_posi *path, int depth, int direction, uint32_t elem_count)
 {
     btree_elem_posi  posi;
-    btree_indx_node *saved_node;
+    bplus_indx_node *saved_node;
 
-    while (depth < BTREE_MAX_DEPTH) {
+    while (depth < BPLUS_MAX_DEPTH) {
         posi = path[depth];
         posi.node->ecnt[posi.indx] -= elem_count;
 
@@ -910,10 +910,10 @@ static void do_bplus_ecnt_move_merge(btree_elem_posi *path, int depth, int direc
         if (saved_node == posi.node) break;
         depth += 1;
     }
-    assert(depth < BTREE_MAX_DEPTH);
+    assert(depth < BPLUS_MAX_DEPTH);
 }
 
-static void do_bplus_node_sbalance(btree_indx_node *node, btree_elem_posi *path, int depth)
+static void do_bplus_node_sbalance(bplus_indx_node *node, btree_elem_posi *path, int depth)
 {
     btree_elem_posi *posi;
     int direction;
@@ -996,7 +996,7 @@ static void do_bplus_node_sbalance(btree_indx_node *node, btree_elem_posi *path,
     }
 }
 
-static void do_bplus_node_link(btree_meta_info *info, btree_indx_node *node,
+static void do_bplus_node_link(btree_meta_info *info, bplus_indx_node *node,
                                btree_elem_posi *p_posi, size_t *space_increased)
 {
     /*
@@ -1014,7 +1014,7 @@ static void do_bplus_node_link(btree_meta_info *info, btree_indx_node *node,
         info->root = node;
     } else {
         /* Parent node exists */
-        btree_indx_node *p_node = p_posi->node;
+        bplus_indx_node *p_node = p_posi->node;
         assert(p_node->used_count >= 1);
         assert(p_posi->indx <= p_node->used_count);
 
@@ -1042,23 +1042,23 @@ static void do_bplus_node_link(btree_meta_info *info, btree_indx_node *node,
         p_node->used_count++;
     }
 
-    if (node->ndepth > 0) *space_increased += slabs_space_size(sizeof(btree_indx_node));
-    else                  *space_increased += slabs_space_size(sizeof(btree_leaf_node));
+    if (node->ndepth > 0) *space_increased += slabs_space_size(sizeof(bplus_indx_node));
+    else                  *space_increased += slabs_space_size(sizeof(bplus_leaf_node));
 }
 
 static ENGINE_ERROR_CODE do_bplus_node_split(btree_meta_info *info, btree_elem_posi *path, size_t *space_increased)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    btree_indx_node *s_node;
-    btree_indx_node *n_node[BTREE_MAX_DEPTH]; /* neighber nodes */
+    bplus_indx_node *s_node;
+    bplus_indx_node *n_node[BPLUS_MAX_DEPTH]; /* neighber nodes */
     btree_elem_posi  p_posi;
     int     i, direction;
     uint8_t btree_depth = 0;
 
     s_node = path[btree_depth].node;
     do {
-        if ((s_node->next != NULL && s_node->next->used_count < (BTREE_ITEM_COUNT/2)) ||
-            (s_node->prev != NULL && s_node->prev->used_count < (BTREE_ITEM_COUNT/2))) {
+        if ((s_node->next != NULL && s_node->next->used_count < (BPLUS_ITEM_COUNT/2)) ||
+            (s_node->prev != NULL && s_node->prev->used_count < (BPLUS_ITEM_COUNT/2))) {
             do_bplus_node_sbalance(s_node, path, btree_depth);
             break;
         }
@@ -1068,9 +1068,9 @@ static ENGINE_ERROR_CODE do_bplus_node_split(btree_meta_info *info, btree_elem_p
             ret = ENGINE_ENOMEM; break;
         }
         btree_depth += 1;
-        assert(btree_depth < BTREE_MAX_DEPTH);
+        assert(btree_depth < BPLUS_MAX_DEPTH);
         if (btree_depth > info->root->ndepth) {
-            btree_indx_node *r_node = do_bplus_node_alloc(btree_depth);
+            bplus_indx_node *r_node = do_bplus_node_alloc(btree_depth);
             if (r_node == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -1082,13 +1082,13 @@ static ENGINE_ERROR_CODE do_bplus_node_split(btree_meta_info *info, btree_elem_p
         }
         s_node = path[btree_depth].node;
     }
-    while (s_node->used_count >= BTREE_ITEM_COUNT);
+    while (s_node->used_count >= BPLUS_ITEM_COUNT);
 
     if (ret == ENGINE_SUCCESS) {
         for (i = btree_depth-1; i >= 0; i--) {
             s_node = path[i].node;
             if (s_node->prev == NULL && s_node->next == NULL) {
-                direction = (path[i].indx < (BTREE_ITEM_COUNT/2) ?
+                direction = (path[i].indx < (BPLUS_ITEM_COUNT/2) ?
                              BTREE_DIRECTION_PREV : BTREE_DIRECTION_NEXT);
             } else {
                 direction = (s_node->prev == NULL ?
@@ -1117,7 +1117,7 @@ static ENGINE_ERROR_CODE do_bplus_node_split(btree_meta_info *info, btree_elem_p
 }
 
 /* merge check */
-static void do_bplus_node_mbalance(btree_indx_node *node, btree_elem_posi *path, int depth)
+static void do_bplus_node_mbalance(bplus_indx_node *node, btree_elem_posi *path, int depth)
 {
     int direction;
 
@@ -1138,7 +1138,7 @@ static void do_bplus_node_mbalance(btree_indx_node *node, btree_elem_posi *path,
     do_bplus_ecnt_move_merge(path, depth+1, direction, elem_count);
 }
 
-static void do_bplus_node_unlink(btree_meta_info *info, btree_indx_node *node,
+static void do_bplus_node_unlink(btree_meta_info *info, bplus_indx_node *node,
                                  btree_elem_posi *p_posi, size_t *space_decreased)
 {
     if (p_posi == NULL) {
@@ -1151,7 +1151,7 @@ static void do_bplus_node_unlink(btree_meta_info *info, btree_indx_node *node,
         node->prev = node->next = NULL;
 
         /* Parent node exists */
-        btree_indx_node *p_node = p_posi->node;
+        bplus_indx_node *p_node = p_posi->node;
         assert(p_node->ecnt[p_posi->indx] == 0);
         for (int i = p_posi->indx+1; i < p_node->used_count; i++) {
             p_node->item[i-1] = p_node->item[i];
@@ -1162,8 +1162,8 @@ static void do_bplus_node_unlink(btree_meta_info *info, btree_indx_node *node,
         p_node->used_count--;
     }
 
-    if (node->ndepth > 0) *space_decreased += slabs_space_size(sizeof(btree_indx_node));
-    else                  *space_decreased += slabs_space_size(sizeof(btree_leaf_node));
+    if (node->ndepth > 0) *space_decreased += slabs_space_size(sizeof(bplus_indx_node));
+    else                  *space_decreased += slabs_space_size(sizeof(bplus_leaf_node));
 
     /* The amount of space to be decreased become different according to node depth.
      * So, the btree node must be freed after collection space is decreased.
@@ -1171,15 +1171,15 @@ static void do_bplus_node_unlink(btree_meta_info *info, btree_indx_node *node,
     do_bplus_node_free(node);
 }
 
-static void do_btree_node_detach(btree_indx_node *node, size_t *space_decreased)
+static void do_btree_node_detach(bplus_indx_node *node, size_t *space_decreased)
 {
     /* unlink the given node from b+tree */
     if (node->prev != NULL) node->prev->next = node->next;
     if (node->next != NULL) node->next->prev = node->prev;
     node->prev = node->next = NULL;
 
-    if (node->ndepth > 0) *space_decreased += slabs_space_size(sizeof(btree_indx_node));
-    else                  *space_decreased += slabs_space_size(sizeof(btree_leaf_node));
+    if (node->ndepth > 0) *space_decreased += slabs_space_size(sizeof(bplus_indx_node));
+    else                  *space_decreased += slabs_space_size(sizeof(bplus_leaf_node));
 
     /* The amount of space to be decreased become different according to node depth.
      * So, the btree node must be freed after collection space is decreased.
@@ -1189,7 +1189,7 @@ static void do_btree_node_detach(btree_indx_node *node, size_t *space_decreased)
 
 static inline void do_bplus_node_remove_null_items(btree_elem_posi *posi, const bool forward, const int null_count)
 {
-    btree_indx_node *node = posi->node;
+    bplus_indx_node *node = posi->node;
     assert(null_count <= node->used_count);
 
     if (null_count < node->used_count) {
@@ -1224,7 +1224,7 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
                                 const bool forward, const int leaf_node_count,
                                 size_t *space_decreased)
 {
-    btree_indx_node *node;
+    bplus_indx_node *node;
     int cur_node_count = leaf_node_count;
     int par_node_count;
     uint8_t btree_depth = 0;
@@ -1243,9 +1243,9 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
                 if (node->used_count == 0) {
                     do_bplus_node_unlink(info, node, NULL, space_decreased);
                 } else {
-                    btree_indx_node *new_root;
+                    bplus_indx_node *new_root;
                     while (node->used_count == 1 && node->ndepth > 0) {
-                        new_root = BTREE_GET_NODE_ITEM(node, 0);
+                        new_root = BPLUS_GET_NODE_ITEM(node, 0);
                         do_bplus_node_unlink(info, node, NULL, space_decreased);
                         info->root = new_root;
                         node = new_root;
@@ -1256,9 +1256,9 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
                     do_bplus_node_unlink(info, node, &path[btree_depth+1], space_decreased);
                     par_node_count = 1;
                 }
-                else if (node->used_count < (BTREE_ITEM_COUNT/2)) {
-                    if ((node->prev != NULL && node->prev->used_count < (BTREE_ITEM_COUNT/2)) ||
-                        (node->next != NULL && node->next->used_count < (BTREE_ITEM_COUNT/2))) {
+                else if (node->used_count < (BPLUS_ITEM_COUNT/2)) {
+                    if ((node->prev != NULL && node->prev->used_count < (BPLUS_ITEM_COUNT/2)) ||
+                        (node->next != NULL && node->next->used_count < (BPLUS_ITEM_COUNT/2))) {
                         do_bplus_node_mbalance(node, path, btree_depth);
                         do_bplus_node_unlink(info, node, &path[btree_depth+1], space_decreased);
                         par_node_count = 1;
@@ -1266,7 +1266,7 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
                 }
             }
         } else { /* cur_node_count > 1 */
-            btree_elem_posi  upth[BTREE_MAX_DEPTH] = {{ 0 }}; /* upper node path */
+            btree_elem_posi  upth[BPLUS_MAX_DEPTH] = {{ 0 }}; /* upper node path */
             btree_elem_posi  s_posi;
             int cur_unlink_cnt = 0;
             int i, upp_depth = btree_depth+1;
@@ -1278,7 +1278,7 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
 
             s_posi = upth[upp_depth];
             for (i = 1; i <= cur_node_count; i++) {
-                node = BTREE_GET_NODE_ITEM(s_posi.node, s_posi.indx);
+                node = BPLUS_GET_NODE_ITEM(s_posi.node, s_posi.indx);
                 assert(node != NULL);
 
                 if (node->used_count == 0) {
@@ -1295,13 +1295,13 @@ static void do_bplus_node_merge(btree_meta_info *info, btree_elem_posi *path,
 
             s_posi = upth[upp_depth];
             for (i = 1; i <= cur_node_count; i++) {
-                node = BTREE_GET_NODE_ITEM(upth[upp_depth].node, upth[upp_depth].indx);
+                node = BPLUS_GET_NODE_ITEM(upth[upp_depth].node, upth[upp_depth].indx);
                 if (node == NULL) {
                     cur_unlink_cnt++;
                 }
-                else if (node->used_count < (BTREE_ITEM_COUNT/2)) {
-                    if ((node->prev != NULL && node->prev->used_count < (BTREE_ITEM_COUNT/2)) ||
-                        (node->next != NULL && node->next->used_count < (BTREE_ITEM_COUNT/2))) {
+                else if (node->used_count < (BPLUS_ITEM_COUNT/2)) {
+                    if ((node->prev != NULL && node->prev->used_count < (BPLUS_ITEM_COUNT/2)) ||
+                        (node->next != NULL && node->next->used_count < (BPLUS_ITEM_COUNT/2))) {
                         do_bplus_node_mbalance(node, upth, btree_depth);
                         do_btree_node_detach(node, space_decreased);
                         upth[upp_depth].node->item[upth[upp_depth].indx] = NULL;
@@ -1347,7 +1347,7 @@ static void do_bplus_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
     elem->linked--;
 
     /* remove the element from the leaf node */
-    btree_indx_node *node = posi->node;
+    bplus_indx_node *node = posi->node;
     for (i = posi->indx+1; i < node->used_count; i++) {
         node->item[i-1] = node->item[i];
     }
@@ -1357,7 +1357,7 @@ static void do_bplus_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
     for (i = 1; i <= info->root->ndepth; i++) {
         path[i].node->ecnt[path[i].indx]--;
     }
-    if (node->used_count < (BTREE_ITEM_COUNT/2)) {
+    if (node->used_count < (BPLUS_ITEM_COUNT/2)) {
         do_bplus_node_merge(info, path, true, 1, space_decreased);
     }
 }
@@ -1521,7 +1521,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
 static int do_btree_elem_delete_fast(btree_meta_info *info,
                                      btree_elem_posi *path, const uint32_t count)
 {
-    btree_indx_node *node;
+    bplus_indx_node *node;
     btree_elem_item *elem;
     int i, delcnt=0;
     int cur_depth;
@@ -1529,7 +1529,7 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
     if (info->root == NULL) {
         return 0;
     }
-    assert(info->root->ndepth < BTREE_MAX_DEPTH);
+    assert(info->root->ndepth < BPLUS_MAX_DEPTH);
 
     if (path[0].node == NULL) {
         path[0].node = bplus_get_first_leaf(info->root, path);
@@ -1588,14 +1588,14 @@ static btree_elem_item *bplus_elem_delete(btree_meta_info *info,
                                           btree_delete_ctx *delete_ctx,
                                           uint32_t *opcost, size_t *space_decreased)
 {
-    btree_indx_node *root = info->root;
+    bplus_indx_node *root = info->root;
     btree_elem_item *elem;
-    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
 
     if (opcost) *opcost = 0;
     if (root == NULL) return 0;
 
-    assert(root->ndepth < BTREE_MAX_DEPTH);
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_find_first(root, bkrtype, bkrange, path, true);
     if (elem == NULL) return NULL;
 
@@ -1616,10 +1616,10 @@ static uint32_t bplus_elem_delete_bulk(btree_meta_info *info,
                                        btree_delete_ctx *delete_ctx,
                                        uint32_t *opcost, size_t *space_decreased)
 {
-    btree_indx_node *root = info->root;
+    bplus_indx_node *root = info->root;
     btree_elem_item *elem;
-    btree_elem_posi path[BTREE_MAX_DEPTH];
-    btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
+    btree_elem_posi upth[BPLUS_MAX_DEPTH]; /* upper node path */
     uint32_t tot_found = 0;
     uint32_t cur_found = 0;
     uint32_t node_cnt = 1;
@@ -1714,7 +1714,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 
     if (opcost) *opcost = 0;
     if (info->root == NULL) return 0;
-    assert(info->root->ndepth < BTREE_MAX_DEPTH);
+    assert(info->root->ndepth < BPLUS_MAX_DEPTH);
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
@@ -1890,8 +1890,8 @@ static void do_btree_build_largest_trim_range(btree_meta_info *info,
 static btree_elem_item *bplus_delete_first_elem(btree_meta_info *info,
                                                 size_t *space_decreased)
 {
-    btree_elem_posi path[BTREE_MAX_DEPTH];
-    btree_indx_node *leaf = bplus_get_first_leaf(info->root, path);
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
+    bplus_indx_node *leaf = bplus_get_first_leaf(info->root, path);
     path[0].node = leaf;
     path[0].indx = 0;
     btree_elem_item *elem = BTREE_GET_ELEM_ITEM(leaf, 0);
@@ -1902,8 +1902,8 @@ static btree_elem_item *bplus_delete_first_elem(btree_meta_info *info,
 static btree_elem_item *bplus_delete_last_elem(btree_meta_info *info,
                                                size_t *space_decreased)
 {
-    btree_elem_posi path[BTREE_MAX_DEPTH];
-    btree_indx_node *leaf = bplus_get_last_leaf(info->root, path);
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
+    bplus_indx_node *leaf = bplus_get_last_leaf(info->root, path);
     path[0].node = leaf;
     path[0].indx = leaf->used_count - 1;
     btree_elem_item *elem = BTREE_GET_ELEM_ITEM(leaf, leaf->used_count - 1);
@@ -1964,7 +1964,7 @@ static ENGINE_ERROR_CODE do_bplus_elem_link(btree_meta_info *info,
                                            size_t *space_increased)
 {
     /* If the leaf node is full of elements, split it ahead. */
-    if (path[0].node->used_count >= BTREE_ITEM_COUNT) {
+    if (path[0].node->used_count >= BPLUS_ITEM_COUNT) {
         ENGINE_ERROR_CODE ret = do_bplus_node_split(info, path, space_increased);
         if (ret != ENGINE_SUCCESS) {
             return ret;
@@ -1993,7 +1993,7 @@ static ENGINE_ERROR_CODE bplus_elem_add(btree_meta_info *info,
 {
     /* create the root node if it does not exist */
     if (info->root == NULL) {
-        btree_indx_node *r_node = do_bplus_node_alloc(0);
+        bplus_indx_node *r_node = do_bplus_node_alloc(0);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2012,7 +2012,7 @@ static ENGINE_ERROR_CODE bplus_elem_add(btree_meta_info *info,
 static uint32_t bplus_posi_outside(const btree_elem_posi *posi, const int bkrtype)
 {
     if (posi->node == NULL) {
-        if (posi->indx == BTREE_ITEM_COUNT) return BTREE_OUTSIDE_LEFT;
+        if (posi->indx == BPLUS_ITEM_COUNT) return BTREE_OUTSIDE_LEFT;
         if (posi->indx == 0)                return BTREE_OUTSIDE_RIGHT;
         return 0;
     }
@@ -2046,11 +2046,11 @@ static bool bplus_elem_get(btree_meta_info *info,
                            uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
 {
     assert(info->root);
-    btree_indx_node *root = info->root;
+    bplus_indx_node *root = info->root;
     btree_elem_item *elem;
-    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
 
-    assert(root->ndepth < BTREE_MAX_DEPTH);
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_find_first(root, bkrtype, bkrange, path, delete);
     if (elem == NULL) {
         if (outside) *outside = bplus_posi_outside(&path[0], BKEY_RANGE_TYPE_SIN);
@@ -2080,10 +2080,10 @@ static uint32_t bplus_elem_get_bulk(btree_meta_info *info,
                                     uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
 {
     assert(info->root);
-    btree_indx_node *root = info->root;
+    bplus_indx_node *root = info->root;
     btree_elem_item *elem;
-    btree_elem_posi path[BTREE_MAX_DEPTH];
-    btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
+    btree_elem_posi upth[BPLUS_MAX_DEPTH]; /* upper node path */
     uint32_t tot_found = 0;
     uint32_t cur_found = 0;
     uint32_t node_cnt = 1;
@@ -2091,7 +2091,7 @@ static uint32_t bplus_elem_get_bulk(btree_meta_info *info,
     int i;
     bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
 
-    assert(root->ndepth < BTREE_MAX_DEPTH);
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_find_first(root, bkrtype, bkrange, path, delete);
     if (elem == NULL) {
         if (outside) *outside = bplus_posi_outside(&path[0], bkrtype);
@@ -2370,7 +2370,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *el
                                               uint32_t *trimmed_count)
 {
     btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
     btree_elem_item *find;
 
     /* validation check: bkey type */
@@ -2414,7 +2414,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
 {
     ENGINE_ERROR_CODE ret;
     btree_elem_item *elem;
-    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_elem_posi path[BPLUS_MAX_DEPTH];
     uint64_t value;
     char     nbuf[128];
     int      nlen;
@@ -2524,7 +2524,7 @@ static int bplus_posi_find(btree_meta_info *info,
                            const int bkrtype, const bkey_range *bkrange,
                            ENGINE_BTREE_ORDER order)
 {
-    btree_elem_posi  path[BTREE_MAX_DEPTH];
+    btree_elem_posi  path[BPLUS_MAX_DEPTH];
     btree_elem_item *elem;
     int bpos; /* btree position */
 
@@ -2567,7 +2567,7 @@ static int bplus_posi_find_with_get(btree_meta_info *info,
                                     btree_elem_item **elem_array,
                                     uint32_t *elem_count, uint32_t *elem_index)
 {
-    btree_elem_posi  path[BTREE_MAX_DEPTH];
+    btree_elem_posi  path[BPLUS_MAX_DEPTH];
     btree_elem_item *elem;
     int bpos = -1; /* NOT found */
 
@@ -2605,7 +2605,7 @@ static ENGINE_ERROR_CODE bplus_elem_get_by_posi(btree_meta_info *info,
                                                 btree_elem_item **elem_array, uint32_t *elem_count)
 {
     btree_elem_posi  posi;
-    btree_indx_node *node;
+    bplus_indx_node *node;
     btree_elem_item *elem;
     int i, tot_ecnt;
     uint32_t nfound; /* found count */
@@ -2621,7 +2621,7 @@ static ENGINE_ERROR_CODE bplus_elem_get_by_posi(btree_meta_info *info,
             tot_ecnt += node->ecnt[i];
         }
         assert(i < node->used_count);
-        node = (btree_indx_node *)node->item[i];
+        node = (bplus_indx_node *)node->item[i];
     }
     assert(node->ndepth == 0);
     posi.node = node;
@@ -4063,7 +4063,7 @@ ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
 void btree_traverse_init(coll_meta_info *info, void *posi)
 {
     btree_elem_posi *bp = (btree_elem_posi *)posi;
-    btree_indx_node *node = ((btree_meta_info *)info)->root;
+    bplus_indx_node *node = ((btree_meta_info *)info)->root;
     if (node == NULL || node->used_count == 0) {
         bp->node = NULL;
         return;

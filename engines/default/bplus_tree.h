@@ -23,6 +23,32 @@
 #include <assert.h>
 #include <string.h>
 
+#define BPLUS_MAX_DEPTH  7
+#define BPLUS_ITEM_COUNT 32 /* Recommend BPLUS_ITEM_COUNT >= 8 */
+
+typedef struct _bplus_leaf_node {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;      /* which slab class we're in */
+    uint8_t  ndepth;
+    uint16_t used_count;
+    uint16_t reserved;
+    struct _bplus_indx_node *prev;
+    struct _bplus_indx_node *next;
+    void    *item[BPLUS_ITEM_COUNT];
+} bplus_leaf_node;
+
+typedef struct _bplus_indx_node {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;      /* which slab class we're in */
+    uint8_t  ndepth;
+    uint16_t used_count;
+    uint16_t reserved;
+    struct _bplus_indx_node *prev;
+    struct _bplus_indx_node *next;
+    void    *item[BPLUS_ITEM_COUNT];
+    uint32_t ecnt[BPLUS_ITEM_COUNT];
+} bplus_indx_node;
+
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
@@ -43,7 +69,7 @@
 
 /* btree element item or btree node item */
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
-#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
+#define BPLUS_GET_NODE_ITEM(node, indx) ((bplus_indx_node *)((node)->item[indx]))
 
 #define BKEY_COMP(bk1, nbk1, bk2, nbk2) \
         (((nbk1)==0 && (nbk2)==0) ? UINT64_COMP((const uint64_t*)(bk1),(const uint64_t*)(bk2)) \
