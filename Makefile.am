@@ -175,6 +175,8 @@ default_engine_la_SOURCES= \
                     engines/default/item_base.h \
                     engines/default/hash_tree.c \
                     engines/default/hash_tree.h \
+                    engines/default/bplus_tree.c \
+                    engines/default/bplus_tree.h \
                     engines/default/coll_list.c \
                     engines/default/coll_list.h \
                     engines/default/coll_set.c \

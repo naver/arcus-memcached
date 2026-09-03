@@ -58,6 +58,11 @@ typedef struct _bplus_indx_node {
     uint32_t ecnt[BPLUS_ITEM_COUNT];
 } bplus_indx_node;
 
+typedef struct _bplus_meta {
+    bplus_indx_node *root;
+    uint32_t         tot_elem_cnt;
+} bplus_meta;
+
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
@@ -121,5 +126,7 @@ typedef struct _bplus_indx_node {
 
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
+
+void bplus_init(bplus_meta *btree);
 
 #endif
