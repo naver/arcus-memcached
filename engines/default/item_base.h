@@ -263,7 +263,7 @@ typedef struct _btree_meta_info {
     uint8_t  bktype;       /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint8_t  reserved[7];  /* reserved space */
     bkey_t   maxbkeyrange;
-    bplus_indx_node *root;
+    bplus_meta bplus;
 } btree_meta_info;
 
 /* common meta info of list and set */
