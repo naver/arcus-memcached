@@ -58,8 +58,16 @@ typedef struct _bplus_indx_node {
     uint32_t ecnt[BPLUS_ITEM_COUNT];
 } bplus_indx_node;
 
+typedef struct {
+    const void *(*get_bkey)(const bplus_elem_item *elem, uint32_t *nbkey);
+    const void *(*get_eflag)(const bplus_elem_item *elem, uint32_t *neflag);
+    int (*tiebreak)(const bplus_elem_item *e1, const bplus_elem_item *e2);
+    void (*delete_post)(bplus_elem_item *elem, void *arg);
+} bplus_ops;
+
 typedef struct _bplus_meta {
     bplus_indx_node *root;
+    bplus_ops       *ops;
     uint32_t         tot_elem_cnt;
 } bplus_meta;
 
@@ -127,6 +135,6 @@ typedef struct _bplus_meta {
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
-void bplus_init(bplus_meta *btree);
+void bplus_init(bplus_meta *btree, bplus_ops *ops);
 
 #endif
