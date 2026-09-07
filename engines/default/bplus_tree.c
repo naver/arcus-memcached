@@ -25,8 +25,9 @@
 /*
  * Btree Interface Functions
  */
-void bplus_init(bplus_meta *btree)
+void bplus_init(bplus_meta *btree, bplus_ops *ops)
 {
     btree->root = NULL;
+    btree->ops = ops;
     btree->tot_elem_cnt = 0;
 }
