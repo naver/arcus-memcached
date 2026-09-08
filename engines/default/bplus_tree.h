@@ -71,6 +71,17 @@ typedef struct _bplus_meta {
     uint32_t         tot_elem_cnt;
 } bplus_meta;
 
+/* bplus element position */
+typedef struct _bplus_elem_posi {
+    bplus_indx_node *node;
+    uint16_t         indx;
+    /* It is used temporarily in order to check
+     * if the found bkey is equal to from_bkey or to_bkey of given bkey range
+     * in the bplus_find_first/next/prev functions.
+     */
+    bool             bkeq;
+} bplus_elem_posi;
+
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
@@ -85,6 +96,9 @@ typedef struct _bplus_meta {
 #define BPLUS_DIRECTION_PREV 2
 #define BPLUS_DIRECTION_NEXT 1
 #define BPLUS_DIRECTION_NONE 0
+
+#define BPLUS_OUTSIDE_LEFT  1
+#define BPLUS_OUTSIDE_RIGHT 2
 
 /* bplus element item or bplus node item */
 #define BPLUS_GET_ELEM_ITEM(node, indx) ((bplus_elem_item *)((node)->item[indx]))
@@ -132,6 +146,145 @@ typedef struct _bplus_meta {
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
+static inline bplus_elem_item *bplus_get_first_elem(bplus_indx_node *node)
+{
+    while (node->ndepth > 0) {
+        node = (bplus_indx_node *)(node->item[0]);
+    }
+    assert(node->ndepth == 0);
+    return (bplus_elem_item *)(node->item[0]);
+}
+
+static inline bplus_elem_item *bplus_get_last_elem(bplus_indx_node *node)
+{
+    while (node->ndepth > 0) {
+        node = (bplus_indx_node *)(node->item[node->used_count-1]);
+    }
+    assert(node->ndepth == 0);
+    return (bplus_elem_item *)(node->item[node->used_count-1]);
+}
+
+static inline bplus_indx_node *bplus_get_first_leaf(bplus_indx_node *node,
+                                                    bplus_elem_posi *path)
+{
+    while (node->ndepth > 0) {
+        if (path) {
+            path[node->ndepth].node = node;
+            path[node->ndepth].indx = 0;
+        }
+        node = (bplus_indx_node *)(node->item[0]);
+    }
+    assert(node->ndepth == 0);
+    return node;
+}
+
+static inline bplus_indx_node *bplus_get_last_leaf(bplus_indx_node *node,
+                                                   bplus_elem_posi *path)
+{
+    while (node->ndepth > 0) {
+        if (path) {
+            path[node->ndepth].node = node;
+            path[node->ndepth].indx = node->used_count-1;
+        }
+        node = (bplus_indx_node *)(node->item[node->used_count-1]);
+    }
+    assert(node->ndepth == 0);
+    return node;
+}
+
+static inline bool bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem, const eflag_filter *efilter)
+{
+    assert(efilter != NULL);
+    uint32_t neflag;
+    unsigned char *operand = (unsigned char *)bplus->ops->get_eflag(elem, &neflag) + efilter->offset;
+
+    if (efilter->offset >= neflag || efilter->ncompval > (neflag - efilter->offset)) {
+        return (efilter->compop == COMPARE_OP_NE ? true : false);
+    }
+
+    unsigned char result[MAX_EFLAG_LENG];
+
+    if (efilter->nbitwval > 0) {
+        (*BINARY_BITWISE_OP[efilter->bitwop])(operand, efilter->bitwval, efilter->nbitwval, result);
+        operand = &result[0];
+    }
+
+    if (efilter->compvcnt > 1) {
+        assert(efilter->compop == COMPARE_OP_EQ || efilter->compop == COMPARE_OP_NE);
+        for (int i = 0; i < efilter->compvcnt; i++) {
+            if (BINARY_ISEQ(operand, efilter->ncompval,
+                            &efilter->compval[i*efilter->ncompval], efilter->ncompval)) {
+                return (efilter->compop == COMPARE_OP_EQ ? true : false);
+            }
+        }
+        return (efilter->compop == COMPARE_OP_EQ ? false : true);
+    } else {
+        return (*BINARY_COMPARE_OP[efilter->compop])(operand, efilter->ncompval,
+                                                     efilter->compval, efilter->ncompval);
+    }
+}
+
 void bplus_init(bplus_meta *bplus, bplus_ops *ops);
+
+bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
+                                 const void *bkey, uint32_t nbkey,
+                                 bplus_elem_posi *path);
+bplus_elem_item *bplus_find_first(bplus_meta *bplus,
+                                  const int bkrtype, const bkey_range *bkrange,
+                                  bplus_elem_posi *path, const bool path_flag);
+bplus_elem_item *bplus_find_next(bplus_meta *bplus,
+                                 bplus_elem_posi *posi, const bkey_range *bkrange);
+bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
+                                 bplus_elem_posi *posi, const bkey_range *bkrange);
+
+ENGINE_ERROR_CODE bplus_elem_add(bplus_meta *bplus,
+                                 bplus_elem_posi *path, bplus_elem_item *elem,
+                                 size_t *space_increased);
+bplus_elem_item *bplus_elem_replace(bplus_elem_posi *posi, bplus_elem_item *new_elem);
+
+bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
+                                   const int bkrtype, const bkey_range *bkrange,
+                                   const eflag_filter *efilter,
+                                   void *delete_arg,
+                                   uint32_t *opcost, size_t *space_decreased);
+uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
+                                const int bkrtype, const bkey_range *bkrange,
+                                const eflag_filter *efilter,
+                                const uint32_t offset, const uint32_t count,
+                                void *delete_arg,
+                                uint32_t *opcost, size_t *space_decreased);
+bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decreased);
+bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreased);
+
+uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const int bkrtype);
+bool bplus_elem_get(bplus_meta *bplus,
+                    const int bkrtype, const bkey_range *bkrange,
+                    const eflag_filter *efilter,
+                    const bool delete, void *delete_arg,
+                    bplus_elem_item **elem_array,
+                    uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
+uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
+                             const int bkrtype, const bkey_range *bkrange,
+                             const eflag_filter *efilter,
+                             const uint32_t offset, const uint32_t count,
+                             const bool delete, void *delete_arg,
+                             bplus_elem_item **elem_array,
+                             uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
+
+int bplus_posi_find(bplus_meta *bplus,
+                    const int bkrtype, const bkey_range *bkrange,
+                    ENGINE_BTREE_ORDER order);
+int bplus_posi_find_with_get(bplus_meta *bplus,
+                             const int bkrtype, const bkey_range *bkrange,
+                             ENGINE_BTREE_ORDER order, const int count,
+                             bplus_elem_item **elem_array,
+                             uint32_t *elem_count, uint32_t *elem_index);
+ENGINE_ERROR_CODE bplus_elem_get_by_posi(bplus_meta *bplus,
+                                         const int index, const uint32_t count, const bool forward,
+                                         bplus_elem_item **elem_array, uint32_t *elem_count);
+
+uint32_t bplus_elem_count(bplus_meta *bplus,
+                          const int bkrtype, const bkey_range *bkrange,
+                          const eflag_filter *efilter, uint32_t *opcost);
 
 #endif
