@@ -23,11 +23,11 @@
 #include <string.h>
 
 /*
- * Btree Interface Functions
+ * Bplus Interface Functions
  */
-void bplus_init(bplus_meta *btree, bplus_ops *ops)
+void bplus_init(bplus_meta *bplus, bplus_ops *ops)
 {
-    btree->root = NULL;
-    btree->ops = ops;
-    btree->tot_elem_cnt = 0;
+    bplus->root = NULL;
+    bplus->ops = ops;
+    bplus->tot_elem_cnt = 0;
 }
