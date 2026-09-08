@@ -76,18 +76,15 @@ typedef struct _bplus_meta {
 #define BKEY_TYPE_UINT64  1
 #define BKEY_TYPE_BINARY  2
 
-/* get bkey real size */
-#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
 /* bkey range type */
 #define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
 #define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
 #define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
 
-/* btree scan direction */
-#define BTREE_DIRECTION_PREV 2
-#define BTREE_DIRECTION_NEXT 1
-#define BTREE_DIRECTION_NONE 0
+/* bplus scan direction */
+#define BPLUS_DIRECTION_PREV 2
+#define BPLUS_DIRECTION_NEXT 1
+#define BPLUS_DIRECTION_NONE 0
 
 /* bplus element item or bplus node item */
 #define BPLUS_GET_ELEM_ITEM(node, indx) ((bplus_elem_item *)((node)->item[indx]))
@@ -135,6 +132,6 @@ typedef struct _bplus_meta {
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
-void bplus_init(bplus_meta *btree, bplus_ops *ops);
+void bplus_init(bplus_meta *bplus, bplus_ops *ops);
 
 #endif
