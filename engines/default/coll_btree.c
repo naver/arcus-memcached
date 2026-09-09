@@ -83,7 +83,7 @@ typedef struct {
     enum elem_delete_cause  cause;
 } btree_delete_ctx;
 
-/* btree position debugging */
+/* bplus position debugging */
 static bool bplus_position_debug = false;
 
 /* bkey min & max value */
@@ -985,7 +985,7 @@ static void do_bplus_node_sbalance(bplus_indx_node *node, bplus_elem_posi *path,
 
         do_bplus_node_item_move(node, node->next, direction, move_count);
 
-        /* move element count in upper btree nodes */
+        /* move element count in upper bplus nodes */
         do_bplus_ecnt_move_split(path, depth+1, direction, elem_count);
 
         /* adjust posi information */
@@ -1016,7 +1016,7 @@ static void do_bplus_node_sbalance(bplus_indx_node *node, bplus_elem_posi *path,
 
         do_bplus_node_item_move(node, node->prev, direction, move_count);
 
-        /* move element count in upper btree nodes */
+        /* move element count in upper bplus nodes */
         do_bplus_ecnt_move_split(path, depth+1, direction, elem_count);
 
         /* adjust posi information */
@@ -1089,39 +1089,39 @@ static ENGINE_ERROR_CODE do_bplus_node_split(bplus_meta *bplus, bplus_elem_posi 
     bplus_indx_node *n_node[BPLUS_MAX_DEPTH]; /* neighber nodes */
     bplus_elem_posi  p_posi;
     int     i, direction;
-    uint8_t btree_depth = 0;
+    uint8_t bplus_depth = 0;
 
-    s_node = path[btree_depth].node;
+    s_node = path[bplus_depth].node;
     do {
         if ((s_node->next != NULL && s_node->next->used_count < (BPLUS_ITEM_COUNT/2)) ||
             (s_node->prev != NULL && s_node->prev->used_count < (BPLUS_ITEM_COUNT/2))) {
-            do_bplus_node_sbalance(s_node, path, btree_depth);
+            do_bplus_node_sbalance(s_node, path, bplus_depth);
             break;
         }
 
-        n_node[btree_depth] = do_bplus_node_alloc(btree_depth);
-        if (n_node[btree_depth] == NULL) {
+        n_node[bplus_depth] = do_bplus_node_alloc(bplus_depth);
+        if (n_node[bplus_depth] == NULL) {
             ret = ENGINE_ENOMEM; break;
         }
-        btree_depth += 1;
-        assert(btree_depth < BPLUS_MAX_DEPTH);
-        if (btree_depth > bplus->root->ndepth) {
-            bplus_indx_node *r_node = do_bplus_node_alloc(btree_depth);
+        bplus_depth += 1;
+        assert(bplus_depth < BPLUS_MAX_DEPTH);
+        if (bplus_depth > bplus->root->ndepth) {
+            bplus_indx_node *r_node = do_bplus_node_alloc(bplus_depth);
             if (r_node == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
             do_bplus_node_link(bplus, r_node, NULL, space_increased);
 
-            path[btree_depth].node = r_node;
-            path[btree_depth].indx = 0;
+            path[bplus_depth].node = r_node;
+            path[bplus_depth].indx = 0;
             break;
         }
-        s_node = path[btree_depth].node;
+        s_node = path[bplus_depth].node;
     }
     while (s_node->used_count >= BPLUS_ITEM_COUNT);
 
     if (ret == ENGINE_SUCCESS) {
-        for (i = btree_depth-1; i >= 0; i--) {
+        for (i = bplus_depth-1; i >= 0; i--) {
             s_node = path[i].node;
             if (s_node->prev == NULL && s_node->next == NULL) {
                 direction = (path[i].indx < (BPLUS_ITEM_COUNT/2) ?
@@ -1142,7 +1142,7 @@ static ENGINE_ERROR_CODE do_bplus_node_split(bplus_meta *bplus, bplus_elem_posi 
             do_bplus_node_sbalance(s_node, path, i);
         }
     } else {
-        for (i = 0; i < btree_depth; i++) {
+        for (i = 0; i < bplus_depth; i++) {
             do_bplus_node_free(n_node[i]);
         }
     }
@@ -1202,7 +1202,7 @@ static void do_bplus_node_unlink(bplus_meta *bplus, bplus_indx_node *node,
     else                  *space_decreased += slabs_space_size(sizeof(bplus_leaf_node));
 
     /* The amount of space to be decreased become different according to node depth.
-     * So, the btree node must be freed after collection space is decreased.
+     * So, the bplus node must be freed after collection space is decreased.
      */
     do_bplus_node_free(node);
 }
@@ -1218,7 +1218,7 @@ static void do_bplus_node_detach(bplus_indx_node *node, size_t *space_decreased)
     else                  *space_decreased += slabs_space_size(sizeof(bplus_leaf_node));
 
     /* The amount of space to be decreased become different according to node depth.
-     * So, the btree node must be freed after collection space is decreased.
+     * So, the bplus node must be freed after collection space is decreased.
      */
     do_bplus_node_free(node);
 }
@@ -1263,18 +1263,18 @@ static void do_bplus_node_merge(bplus_meta *bplus, bplus_elem_posi *path,
     bplus_indx_node *node;
     int cur_node_count = leaf_node_count;
     int par_node_count;
-    uint8_t btree_depth = 0;
+    uint8_t bplus_depth = 0;
 
     /*
      * leaf_node_count : # of leaf nodes to be merged.
-     * cur_node_count  : # of current nodes to be merged in the current btree depth.
+     * cur_node_count  : # of current nodes to be merged in the current bplus depth.
      * par_node_count  : # of parent nodes that might be merged after the current merge.
      */
     while (cur_node_count > 0)
     {
         par_node_count = 0;
         if (cur_node_count == 1) {
-            node = path[btree_depth].node;
+            node = path[bplus_depth].node;
             if (node == bplus->root) {
                 if (node->used_count == 0) {
                     do_bplus_node_unlink(bplus, node, NULL, space_decreased);
@@ -1289,14 +1289,14 @@ static void do_bplus_node_merge(bplus_meta *bplus, bplus_elem_posi *path,
                 }
             } else {
                 if (node->used_count == 0) {
-                    do_bplus_node_unlink(bplus, node, &path[btree_depth+1], space_decreased);
+                    do_bplus_node_unlink(bplus, node, &path[bplus_depth+1], space_decreased);
                     par_node_count = 1;
                 }
                 else if (node->used_count < (BPLUS_ITEM_COUNT/2)) {
                     if ((node->prev != NULL && node->prev->used_count < (BPLUS_ITEM_COUNT/2)) ||
                         (node->next != NULL && node->next->used_count < (BPLUS_ITEM_COUNT/2))) {
-                        do_bplus_node_mbalance(node, path, btree_depth);
-                        do_bplus_node_unlink(bplus, node, &path[btree_depth+1], space_decreased);
+                        do_bplus_node_mbalance(node, path, bplus_depth);
+                        do_bplus_node_unlink(bplus, node, &path[bplus_depth+1], space_decreased);
                         par_node_count = 1;
                     }
                 }
@@ -1305,7 +1305,7 @@ static void do_bplus_node_merge(bplus_meta *bplus, bplus_elem_posi *path,
             bplus_elem_posi  upth[BPLUS_MAX_DEPTH] = {{ 0 }}; /* upper node path */
             bplus_elem_posi  s_posi;
             int cur_unlink_cnt = 0;
-            int i, upp_depth = btree_depth+1;
+            int i, upp_depth = bplus_depth+1;
 
             /* prepare upper node path */
             for (i = upp_depth; i <= bplus->root->ndepth; i++) {
@@ -1338,7 +1338,7 @@ static void do_bplus_node_merge(bplus_meta *bplus, bplus_elem_posi *path,
                 else if (node->used_count < (BPLUS_ITEM_COUNT/2)) {
                     if ((node->prev != NULL && node->prev->used_count < (BPLUS_ITEM_COUNT/2)) ||
                         (node->next != NULL && node->next->used_count < (BPLUS_ITEM_COUNT/2))) {
-                        do_bplus_node_mbalance(node, upth, btree_depth);
+                        do_bplus_node_mbalance(node, upth, bplus_depth);
                         do_bplus_node_detach(node, space_decreased);
                         upth[upp_depth].node->item[upth[upp_depth].indx] = NULL;
                         assert(upth[upp_depth].node->ecnt[upth[upp_depth].indx] == 0);
@@ -1365,7 +1365,7 @@ static void do_bplus_node_merge(bplus_meta *bplus, bplus_elem_posi *path,
                 par_node_count += 1;
             }
         }
-        btree_depth += 1;
+        bplus_depth += 1;
         cur_node_count = par_node_count;
     }
     if (bplus_position_debug) {
@@ -2569,7 +2569,7 @@ static int do_bplus_posi_from_path(bplus_meta *bplus,
     if (order == BTREE_ORDER_DESC) {
         bpos = bplus->tot_elem_cnt - bpos - 1;
     }
-    return bpos; /* btree position */
+    return bpos; /* bplus position */
 }
 
 static int bplus_posi_find(bplus_meta *bplus,
@@ -2578,7 +2578,7 @@ static int bplus_posi_find(bplus_meta *bplus,
 {
     bplus_elem_posi  path[BPLUS_MAX_DEPTH];
     bplus_elem_item *elem;
-    int bpos; /* btree position */
+    int bpos; /* bplus position */
 
     if (bplus->root == NULL) return -1; /* not found */
 
@@ -2649,7 +2649,7 @@ static int bplus_posi_find_with_get(bplus_meta *bplus,
         *elem_count = (uint32_t)ecnt;
         *elem_index = (uint32_t)eidx;
     }
-    return bpos; /* btree_position */
+    return bpos; /* bplus_position */
 }
 
 static ENGINE_ERROR_CODE bplus_elem_get_by_posi(bplus_meta *bplus,
