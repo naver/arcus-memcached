@@ -56,6 +56,7 @@ typedef struct {
 typedef struct {
     pthread_mutex_t lock;
     void (*shutdown)(void);
+    void (*notify_shutdown)(void);
     char *command; /* heartbeat command string */
     int cmdleng;   /* heartbeat command length */
     int port;      /* memcached port */
@@ -322,6 +323,7 @@ static void *hb_thread_main(void *arg)
         }
     }
     hb_thread_running = false;
+    hb_conf.notify_shutdown();
 
     if (shutdown_by_me) {
         /* It calls shutdown_server() in memcached.c */
@@ -334,7 +336,8 @@ static void *hb_thread_main(void *arg)
  * Arcus heartbeat extern functions
  */
 int arcus_hb_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger,
-                  void (*cb_shutdown_server)(void))
+                  void (*cb_shutdown_server)(void),
+                  void (*cb_notify_shutdown)(void))
 {
     pthread_t tid;
     pthread_attr_t attr;
@@ -346,6 +349,7 @@ int arcus_hb_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger,
     /* init hb_config */
     pthread_mutex_init(&hb_conf.lock, NULL);
     hb_conf.shutdown = cb_shutdown_server;
+    hb_conf.notify_shutdown = cb_notify_shutdown;
     hb_conf.command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
     hb_conf.cmdleng = strlen(hb_conf.command);
     hb_conf.port = port;
@@ -369,6 +373,9 @@ int arcus_hb_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger,
     return 0;
 }
 
+/* Request the hb thread to stop. This does not block.
+ * Use arcus_hb_finalized() to check if the hb thread has terminated.
+ */
 void arcus_hb_final(void)
 {
     /* hb_thread is probably sleeping.  And, if it is in the middle of
@@ -377,15 +384,11 @@ void arcus_hb_final(void)
      */
     hb_thread_stopreq = true;
     hb_thread_wakeup();
+}
 
-    /* wait a maximum of 1000 msec */
-    int elapsed_msec = 0;
-    while (hb_thread_running) {
-        usleep(10000); // 10ms wait
-        elapsed_msec += 10;
-        if (elapsed_msec > 1000)
-            break;
-    }
+bool arcus_hb_finalized(void)
+{
+    return (hb_thread_running == false);
 }
 
 int arcus_hb_get_timeout(void)

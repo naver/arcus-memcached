@@ -111,7 +111,17 @@ void UNLOCK_SETTING(void) {
 
 static pthread_mutex_t shutdown_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t memcached_shutdown=0;
-volatile rel_time_t shutdown_time=0;
+static volatile uint32_t shutdown_delay_ms=0;
+static volatile bool shutdown_reschedule=false;
+static int shutdown_notify_fd[2] = { -1, -1 };
+
+static void shutdown_notify(void)
+{
+    if (write(shutdown_notify_fd[1], "", 1) != 1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Writing to shutdown notify pipe: %s\n", strerror(errno));
+    }
+}
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -10458,7 +10468,7 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
     }
 #endif
 
-    if (memcached_shutdown > 0 && shutdown_time <= current_time) {
+    if (memcached_shutdown != 0) {
         out_string(c, "DENIED");
         return;
     }
@@ -10478,12 +10488,14 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
     }
     mc_logger->log(EXTENSION_LOG_WARNING, c,
                    "shutdown scheduled (time=%d)\n", (int)delay);
-    shutdown_time = current_time + delay;
+    shutdown_delay_ms = delay * 1000;
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
         memcached_shutdown = 1;
     }
+    shutdown_reschedule = true;
     pthread_mutex_unlock(&shutdown_lock);
+    shutdown_notify();
     out_string(c, "OK");
 }
 
@@ -14900,22 +14912,133 @@ static int server_socket_unix(const char *path, int access_mask)
     return 0;
 }
 
-#ifdef ENABLE_ZK_INTEGRATION
-static void shutdown_zk_resources(void)
+static struct event shutdown_notify_event;
+static struct event shutdown_delay_event;
+static bool shutdown_delay_armed = false;
+
+static void shutdown_progress(void);
+
+static void shutdown_delay_handler(const int fd, const short which, void *arg)
 {
-    static bool zk_finalized = false;
-
-    if (arcus_zk_cfg == NULL || zk_finalized) {
-        return;
+    if (settings.verbose > 0) {
+        mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                "Main thread is now terminating from shutdown delay handler.\n");
     }
-    zk_finalized = true;
+    event_base_loopbreak(main_base);
+}
 
-    /* final zk module */
-    arcus_zk_final("graceful shutdown");
-    /* final mc heartbeat */
-    arcus_hb_final();
+/* (Re)start the shutdown delay. The delay is counted from now on,
+ * that is, after the zk resources have been finalized.
+ */
+static void shutdown_delay_arm(void)
+{
+    struct timeval t = {.tv_sec  =  shutdown_delay_ms / 1000,
+                        .tv_usec = (shutdown_delay_ms % 1000) * 1000};
+
+    if (shutdown_delay_armed) {
+        evtimer_del(&shutdown_delay_event);
+    } else {
+        shutdown_delay_armed = true;
+    }
+    evtimer_set(&shutdown_delay_event, shutdown_delay_handler, 0);
+    event_base_set(main_base, &shutdown_delay_event);
+    evtimer_add(&shutdown_delay_event, &t);
+}
+
+#ifdef ENABLE_ZK_INTEGRATION
+static struct event shutdown_zk_event;
+static bool shutdown_zk_timedout = false;
+
+static void shutdown_zk_handler(const int fd, const short which, void *arg)
+{
+    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "zk threads did not terminate. "
+            "Continuing the shutdown. If the zk connection is not closed yet, "
+            "the cache_list znode remains until the ZK session expires.\n");
+    shutdown_zk_timedout = true;
+    shutdown_progress();
+}
+
+static bool shutdown_zk_resources(void)
+{
+    static bool zk_final_started = false;
+    static bool zk_final_done = false;
+
+    if (arcus_zk_cfg == NULL || zk_final_done) {
+        return true;
+    }
+    if (!zk_final_started) {
+        struct timeval t = {.tv_sec = 1, .tv_usec = 0};
+        zk_final_started = true;
+        arcus_zk_final("graceful shutdown");
+        arcus_hb_final();
+        evtimer_set(&shutdown_zk_event, shutdown_zk_handler, 0);
+        event_base_set(main_base, &shutdown_zk_event);
+        evtimer_add(&shutdown_zk_event, &t);
+    }
+    if (shutdown_zk_timedout) {
+        zk_final_done = true;
+        return true;
+    }
+    if (!arcus_zk_finalized() || !arcus_hb_finalized()) {
+        return false;
+    }
+    zk_final_done = true;
+    evtimer_del(&shutdown_zk_event);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "zk threads terminated\n");
+    return true;
 }
 #endif
+
+static void shutdown_progress(void)
+{
+#ifdef ENABLE_ZK_INTEGRATION
+    if (!shutdown_zk_resources()) {
+        return;
+    }
+#endif
+    if (shutdown_reschedule) {
+        shutdown_reschedule = false;
+        shutdown_delay_arm();
+    }
+}
+
+static void shutdown_notify_handler(const int fd, const short which, void *arg)
+{
+    char buf[64];
+
+    /* drain the notifications */
+    while (read(fd, buf, sizeof(buf)) > 0) {
+        /* do nothing */
+    }
+    if (memcached_shutdown == 0) {
+        return;
+    }
+    shutdown_progress();
+}
+
+static int install_shutdown_notify_handler(void)
+{
+    int i, flags;
+
+    if (pipe(shutdown_notify_fd) != 0) {
+        return -1;
+    }
+    for (i = 0; i < 2; i++) {
+        flags = fcntl(shutdown_notify_fd[i], F_GETFL, 0);
+        if (flags < 0 ||
+            fcntl(shutdown_notify_fd[i], F_SETFL, flags | O_NONBLOCK) < 0) {
+            return -1;
+        }
+    }
+    event_set(&shutdown_notify_event, shutdown_notify_fd[0],
+              EV_READ | EV_PERSIST, shutdown_notify_handler, NULL);
+    event_base_set(main_base, &shutdown_notify_event);
+    if (event_add(&shutdown_notify_event, NULL) == -1) {
+        return -1;
+    }
+    return 0;
+}
 
 static struct event clockevent;
 
@@ -14923,20 +15046,6 @@ static void clock_handler(const int fd, const short which, void *arg)
 {
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
-
-    if (memcached_shutdown) {
-#ifdef ENABLE_ZK_INTEGRATION
-        shutdown_zk_resources();
-#endif
-        if (shutdown_time <= current_time) {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "Main thread is now terminating from clock handler.\n");
-            }
-            event_base_loopbreak(main_base);
-            return;
-        }
-    }
 
     if (initialized) {
         /* only delete the event if it's actually there. */
@@ -15126,12 +15235,14 @@ static void remove_pidfile(const char *pid_file)
 
 static void shutdown_server(void)
 {
-    shutdown_time = 0;
+    shutdown_delay_ms = 200;
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
         memcached_shutdown = 1;
     }
+    shutdown_reschedule = true;
     pthread_mutex_unlock(&shutdown_lock);
+    shutdown_notify();
 }
 
 static void sigterm_handler(const int sig, const short which, void *arg)
@@ -16319,6 +16430,13 @@ int main (int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    /* initialize the shutdown notification handler */
+    if (install_shutdown_notify_handler() != 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to install shutdown notify handler\n");
+        exit(EXIT_FAILURE);
+    }
+
     /* load and initialize the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
     if (!load_engine(settings.engine_path, get_server_api, mc_logger, &engine_handle)) {
@@ -16454,7 +16572,8 @@ int main (int argc, char **argv)
     /* initialize Arcus ZK cluster connection */
     if (arcus_zk_cfg) {
         /* init mc hearbeat */
-        if (arcus_hb_init(settings.port, mc_logger, shutdown_server) < 0) {
+        if (arcus_hb_init(settings.port, mc_logger, shutdown_server,
+                          shutdown_notify) < 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to initialize arcus heartbeat.\n");
             exit(EXIT_FAILURE);
@@ -16465,7 +16584,7 @@ int main (int argc, char **argv)
 #ifdef PROXY_SUPPORT
                       arcus_proxy_cfg,
 #endif
-                      mc_engine.v1);
+                      mc_engine.v1, shutdown_server, shutdown_notify);
     }
 #endif
 
