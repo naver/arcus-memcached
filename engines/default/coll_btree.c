@@ -327,8 +327,8 @@ static inline bplus_elem_item *bplus_get_last_elem(bplus_indx_node *node)
     return (bplus_elem_item *)(node->item[node->used_count-1]);
 }
 
-static inline bplus_indx_node *bplus_get_first_leaf(bplus_indx_node *node,
-                                                    bplus_elem_posi *path)
+static inline bplus_indx_node *do_bplus_get_first_leaf(bplus_indx_node *node,
+                                                       bplus_elem_posi *path)
 {
     while (node->ndepth > 0) {
         if (path) {
@@ -341,8 +341,8 @@ static inline bplus_indx_node *bplus_get_first_leaf(bplus_indx_node *node,
     return node;
 }
 
-static inline bplus_indx_node *bplus_get_last_leaf(bplus_indx_node *node,
-                                                   bplus_elem_posi *path)
+static inline bplus_indx_node *do_bplus_get_last_leaf(bplus_indx_node *node,
+                                                      bplus_elem_posi *path)
 {
     while (node->ndepth > 0) {
         if (path) {
@@ -471,7 +471,7 @@ static bplus_indx_node *do_bplus_find_leaf(bplus_meta *bplus,
                     path[node->ndepth].node = node;
                     path[node->ndepth].indx = mid;
                 }
-                node = bplus_get_first_leaf(node->item[mid], path);
+                node = do_bplus_get_first_leaf(node->item[mid], path);
                 assert(node->ndepth == 0);
                 break;
             }
@@ -558,10 +558,10 @@ static bplus_elem_item *bplus_find_first(bplus_meta *bplus,
     if (bkrange == NULL) {
         assert(bkrtype != BKEY_RANGE_TYPE_SIN);
         if (bkrtype == BKEY_RANGE_TYPE_ASC) {
-            path[0].node = bplus_get_first_leaf(root, (path_flag ? path : NULL));
+            path[0].node = do_bplus_get_first_leaf(root, (path_flag ? path : NULL));
             path[0].indx = 0;
         } else {
-            path[0].node = bplus_get_last_leaf(root, (path_flag ? path : NULL));
+            path[0].node = do_bplus_get_last_leaf(root, (path_flag ? path : NULL));
             path[0].indx = path[0].node->used_count - 1;
         }
         path[0].bkeq = false;
@@ -1573,7 +1573,7 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
     assert(bplus->root->ndepth < BPLUS_MAX_DEPTH);
 
     if (path[0].node == NULL) {
-        path[0].node = bplus_get_first_leaf(bplus->root, path);
+        path[0].node = do_bplus_get_first_leaf(bplus->root, path);
         cur_depth = 0;
     } else {
         cur_depth = path[0].indx; /* it's used to keep btree depth on delete */
@@ -1936,7 +1936,7 @@ static bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus,
                                                 size_t *space_decreased)
 {
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
-    bplus_indx_node *leaf = bplus_get_first_leaf(bplus->root, path);
+    bplus_indx_node *leaf = do_bplus_get_first_leaf(bplus->root, path);
     path[0].node = leaf;
     path[0].indx = 0;
     bplus_elem_item *elem = BPLUS_GET_ELEM_ITEM(leaf, 0);
@@ -1948,7 +1948,7 @@ static bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus,
                                                size_t *space_decreased)
 {
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
-    bplus_indx_node *leaf = bplus_get_last_leaf(bplus->root, path);
+    bplus_indx_node *leaf = do_bplus_get_last_leaf(bplus->root, path);
     path[0].node = leaf;
     path[0].indx = leaf->used_count - 1;
     bplus_elem_item *elem = BPLUS_GET_ELEM_ITEM(leaf, leaf->used_count - 1);
@@ -4114,19 +4114,19 @@ ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
     return ret;
 }
 
-void btree_traverse_init(coll_meta_info *info, void *posi)
+static void bplus_traverse_init(bplus_meta *bplus, void *posi)
 {
     bplus_elem_posi *bp = (bplus_elem_posi *)posi;
-    bplus_indx_node *node = ((btree_meta_info *)info)->bplus.root;
+    bplus_indx_node *node = bplus->root;
     if (node == NULL || node->used_count == 0) {
         bp->node = NULL;
         return;
     }
-    bp->node = bplus_get_first_leaf(node, NULL);
+    bp->node = do_bplus_get_first_leaf(node, NULL);
     bp->indx = 0;
 }
 
-uint32_t btree_traverse_next(void *posi, void **elem_array, uint32_t count)
+static uint32_t bplus_traverse_next(void *posi, void **elem_array, uint32_t count)
 {
     bplus_elem_posi *bp = (bplus_elem_posi *)posi;
     uint32_t fcnt = 0;
@@ -4140,6 +4140,16 @@ uint32_t btree_traverse_next(void *posi, void **elem_array, uint32_t count)
         }
     }
     return fcnt;
+}
+
+void btree_traverse_init(coll_meta_info *info, void *posi)
+{
+    bplus_traverse_init(&((btree_meta_info *)info)->bplus, posi);
+}
+
+uint32_t btree_traverse_next(void *posi, void **elem_array, uint32_t count)
+{
+    return bplus_traverse_next(posi, elem_array, count);
 }
 
 /*
