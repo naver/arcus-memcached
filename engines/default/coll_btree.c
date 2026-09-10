@@ -745,7 +745,7 @@ static bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
     return elem;
 }
 
-static inline bool bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem, const eflag_filter *efilter)
+static inline bool do_bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem, const eflag_filter *efilter)
 {
     assert(efilter != NULL);
     uint32_t neflag;
@@ -1643,7 +1643,7 @@ static bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
 
     assert(path[0].bkeq == true);
     if (opcost) *opcost += 1;
-    if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter)) {
+    if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         do_bplus_elem_unlink(bplus, path, space_decreased);
         bplus->ops->delete_post(elem, delete_arg);
         return elem;
@@ -1686,7 +1686,7 @@ static uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
 
     do {
         if (opcost) *opcost += 1;
-        if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter)) {
+        if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
             if (skip_cnt < offset) {
                 skip_cnt++;
             } else {
@@ -2107,7 +2107,7 @@ static bool bplus_elem_get(bplus_meta *bplus,
 
     if (opcost) *opcost += 1;
     if (outside) *outside = 0;
-    if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter)) {
+    if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         elem->refcount++;
         if (delete) {
             do_bplus_elem_unlink(bplus, path, space_decreased);
@@ -2167,7 +2167,7 @@ static uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
 
     do {
         if (opcost) *opcost += 1;
-        if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter)) {
+        if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
             if (skip_cnt < offset) {
                 skip_cnt++;
             } else {
@@ -2343,14 +2343,14 @@ static uint32_t bplus_elem_count(bplus_meta *bplus,
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(posi.bkeq == true);
             tot_access++;
-            if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter))
+            if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter))
                 tot_found++;
         } else { /* BKEY_RANGE_TYPE_ASC || BKEY_RANGE_TYPE_DSC */
             bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
             posi.bkeq = false;
             do {
                 tot_access++;
-                if (efilter == NULL || bplus_elem_filter(bplus, elem, efilter))
+                if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter))
                     tot_found++;
 
                 if (posi.bkeq == true) {
@@ -2731,16 +2731,35 @@ static inline int do_comp_key_string(const char *key1, const int len1,
 }
 **********************/
 
-static btree_elem_item *do_btree_scan_next(bplus_meta *bplus, bplus_elem_posi *posi,
-                                           const int bkrtype, const bkey_range *bkrange)
+static bplus_elem_item *bplus_scan_next(bplus_meta *bplus, bplus_elem_posi *posi,
+                                        const int bkrtype, const bkey_range *bkrange,
+                                        const eflag_filter *efilter, bool is_first,
+                                        bplus_elem_item **last)
 {
-    if (posi->bkeq == true)
-        return NULL;
+    bplus_elem_item *elem;
+    bplus_elem_item *prev = BPLUS_GET_ELEM_ITEM(posi->node, posi->indx);
 
-    if (bkrtype != BKEY_RANGE_TYPE_DSC) // ascending
-        return (btree_elem_item *)bplus_find_next(bplus, posi, bkrange);
-    else // descending
-        return (btree_elem_item *)bplus_find_prev(bplus, posi, bkrange);
+    if (is_first && (efilter == NULL || do_bplus_elem_filter(bplus, prev, efilter))) {
+        return prev;
+    }
+
+    while (1) {
+        if (posi->bkeq == true) {
+            if (last) *last = prev;
+            return NULL;
+        }
+        if (bkrtype != BKEY_RANGE_TYPE_DSC) // ascending
+            elem = bplus_find_next(bplus, posi, bkrange);
+        else // descending
+            elem = bplus_find_prev(bplus, posi, bkrange);
+        if (elem == NULL) {
+            if (last) *last = prev;
+            return NULL;
+        }
+        if (efilter == NULL || do_bplus_elem_filter(bplus, (bplus_elem_item *)elem, efilter))
+            return elem;
+        prev = elem;
+    }
 }
 
 static void do_btree_smget_add_miss(smget_result_t *smres,
@@ -2880,6 +2899,7 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
     hash_item *it;
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
+    btree_elem_item *last;
     bplus_elem_posi posi;
     uint32_t outside;
     int comp_idx;
@@ -2946,27 +2966,23 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
         posi.bkeq = false;
 
 scan_next:
-        if (is_first != true) {
-            assert(elem != NULL);
-            btree_elem_item *prev = elem;
-            elem = do_btree_scan_next(bplus, &posi, bkrtype, bkrange);
-            if (elem == NULL) {
-                if (posi.node == NULL) {
-                    if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
-                        outside = bplus_posi_outside(&posi, bkrtype);
-                        if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-                            /* Some elements weren't cached because of overflow trim */
-                            do_btree_smget_add_trim(smres, kidx, prev);
-                        }
+        elem = (btree_elem_item *)bplus_scan_next(bplus, &posi, bkrtype, bkrange, efilter, is_first,
+                                                  (bplus_elem_item **)&last);
+        if (elem == NULL) {
+            if (posi.node == NULL) {
+                if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
+                    outside = bplus_posi_outside(&posi, bkrtype);
+                    if (do_btree_overlapped_with_trimmed_space(info, outside)) {
+                        /* Some elements weren't cached because of overflow trim */
+                        do_btree_smget_add_trim(smres, kidx, last);
                     }
                 }
-                do_item_release(it); continue;
             }
+            do_item_release(it); continue;
         }
-        is_first = false;
 
-        if (efilter != NULL && !bplus_elem_filter(bplus, (bplus_elem_item *)elem, efilter)) {
-            goto scan_next;
+        if (is_first) {
+            is_first = false;
         }
 
         /* found the item */
@@ -3050,6 +3066,7 @@ scan_next:
                 posi = btree_scan_buf[comp_idx].posi;
                 kidx = btree_scan_buf[comp_idx].kidx;
                 info = (btree_meta_info *)item_get_meta(it);
+                bplus = &info->bplus;
                 btree_scan_buf[comp_idx].it = NULL;
                 curr_idx = comp_idx;
             }
@@ -3156,8 +3173,9 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
 
 scan_next:
         info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
-        last = elem;
-        elem = do_btree_scan_next(&info->bplus, &btree_scan_buf[curr_idx].posi, bkrtype, bkrange);
+        elem = (btree_elem_item *)bplus_scan_next(&info->bplus, &btree_scan_buf[curr_idx].posi,
+                                                  bkrtype, bkrange, efilter, false,
+                                                  (bplus_elem_item **)&last);
         if (elem == NULL) {
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
@@ -3179,10 +3197,6 @@ scan_next:
             }
             first_idx++; sort_count--;
             continue;
-        }
-
-        if (efilter != NULL && !bplus_elem_filter(&info->bplus, (bplus_elem_item *)elem, efilter)) {
-            goto scan_next;
         }
 
         if (sort_count == 1) {
