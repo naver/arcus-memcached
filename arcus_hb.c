@@ -369,6 +369,9 @@ int arcus_hb_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger,
     return 0;
 }
 
+/* Request the hb thread to stop. This does not block.
+ * Use arcus_hb_finalized() to check if the hb thread has terminated.
+ */
 void arcus_hb_final(void)
 {
     /* hb_thread is probably sleeping.  And, if it is in the middle of
@@ -377,15 +380,11 @@ void arcus_hb_final(void)
      */
     hb_thread_stopreq = true;
     hb_thread_wakeup();
+}
 
-    /* wait a maximum of 1000 msec */
-    int elapsed_msec = 0;
-    while (hb_thread_running) {
-        usleep(10000); // 10ms wait
-        elapsed_msec += 10;
-        if (elapsed_msec > 1000)
-            break;
-    }
+bool arcus_hb_finalized(void)
+{
+    return (hb_thread_running == false);
 }
 
 int arcus_hb_get_timeout(void)
