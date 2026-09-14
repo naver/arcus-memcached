@@ -14,6 +14,7 @@ $SIG{ALRM} = sub { die "alarm\n" };
 alarm(2);
 print $sock "Here's a bunch of garbage that doesn't look like the bin prot.";
 my $rv = <$sock>;
+alarm(0);
 ok(1, "Either the above worked and quit, or hung forever.");
 
 # after test
