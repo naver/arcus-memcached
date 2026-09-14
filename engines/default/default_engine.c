@@ -1048,7 +1048,7 @@ default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
                          token_t *karray, const int kcount,
                          const bkey_range *bkrange,
                          const eflag_filter *efilter,
-                         const uint32_t offset, const uint32_t count,
+                         const uint32_t count,
                          const bool unique, smget_result_t *result,
                          uint16_t vbucket)
 {
@@ -1071,7 +1071,7 @@ default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
     /* result->ascending: not yet unknown */
 
     ret = btree_elem_smget(karray, kcount, bkrange, efilter,
-                           offset, count, unique, result);
+                           count, unique, result);
     return ret;
 }
 #endif

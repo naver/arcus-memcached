@@ -569,7 +569,7 @@ extern "C" {
                                               token_t *karray, const int kcount,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
-                                              const uint32_t offset, const uint32_t count,
+                                              const uint32_t count,
                                               const bool unique,
                                               smget_result_t *result,
                                               uint16_t vbucket);

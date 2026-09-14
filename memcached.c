@@ -2789,11 +2789,11 @@ static void process_bop_smget_complete(conn *c)
         }
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
-        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
+        assert(c->coll_rcount <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                             c->coll_roffset, c->coll_rcount,
+                                             c->coll_rcount,
                                              c->coll_unique,
                                              &smres, 0);
     }
@@ -2812,9 +2812,6 @@ static void process_bop_smget_complete(conn *c)
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
-#if 0 // JHPARK_SMGET_OFFSET_HANDLING
-        else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
-#endif
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -6185,7 +6182,8 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
             int emis_rshdr_size; /* the size of result header about the missed keys */
 
             if (req->message.body.key_count > MAX_SMGET_KEY_COUNT ||
-                (req->message.body.req_offset + req->message.body.req_count) > MAX_SMGET_REQ_COUNT) {
+                req->message.body.req_offset != 0 ||
+                req->message.body.req_count > MAX_SMGET_REQ_COUNT) {
                 ret = ENGINE_EBADVALUE; break;
             }
             elem_array_size = (req->message.body.req_count + req->message.body.key_count) * sizeof(eitem*);
@@ -6209,7 +6207,6 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
             } else {
                 c->coll_bkrange = req->message.body.bkrange;
                 c->coll_efilter = req->message.body.efilter;
-                c->coll_roffset = req->message.body.req_offset;
                 c->coll_rcount  = req->message.body.req_count;
                 c->coll_numkeys = req->message.body.key_count;
                 c->coll_lenkeys = vlen + 2;
@@ -6294,11 +6291,11 @@ static void process_bin_bop_smget_complete(conn *c)
         }
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
-        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
+        assert(c->coll_rcount <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                             c->coll_roffset, c->coll_rcount,
+                                             c->coll_rcount,
                                              c->coll_unique, &smres,
                                              c->binary_header.request.vbucket);
     }
@@ -6416,10 +6413,6 @@ static void process_bin_bop_smget_complete(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
-#if 0 // JHPARK_SMGET_OFFSET_HANDLING
-        else if (ret == ENGINE_EBKEYOOR)
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
-#endif
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else

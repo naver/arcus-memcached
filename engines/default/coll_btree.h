@@ -81,7 +81,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
 /* smget new interface */
 ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
-                                   const uint32_t offset, const uint32_t count,
+                                   const uint32_t count,
                                    const bool unique,
                                    smget_result_t *result);
 #endif

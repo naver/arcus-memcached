@@ -2789,37 +2789,6 @@ static void do_btree_smget_add_trim(smget_result_t *smres,
     smres->trim_count++;
 }
 
-#if 0 // JHPARK_SMGET_OFFSET_HANDLING
-static bool do_btree_smget_check_trim(smget_result_t *smres)
-{
-    btree_elem_item *head_elem = smres->elem_array[0];
-    btree_elem_item *trim_elem;
-    bool valid = true;
-
-    /* Check if all the trimmed elements(actually the last element before trim)
-     * are behind the first found element of smget.
-     */
-    if (smres->ascending) {
-        for (int i = 0; i < smres->trim_count; i++) {
-            trim_elem = smres->trim_elems[smres->keys_arrsz-1-i];
-            if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
-                          head_elem->data, head_elem->nbkey) < 0) {
-                valid = false; break;
-            }
-        }
-    } else {
-        for (int i = 0; i < smres->trim_count; i++) {
-            trim_elem = smres->trim_elems[smres->keys_arrsz-1-i];
-            if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
-                          head_elem->data, head_elem->nbkey) > 0) {
-                valid = false; break;
-            }
-        }
-    }
-    return valid;
-}
-#endif
-
 static void do_btree_smget_adjust_trim(smget_result_t *smres)
 {
     eitem       **new_trim_elems = &smres->elem_array[smres->elem_count];
@@ -3115,7 +3084,7 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                          uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
                          const int bkrtype, const bkey_range *bkrange,
                          const eflag_filter *efilter,
-                         const uint32_t offset, const uint32_t count,
+                         const uint32_t count,
                          const bool unique,
                          smget_result_t *smres)
 {
@@ -3130,7 +3099,6 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     uint32_t outside;
     int i, cmp_res;
     int mid, left, right;
-    int skip_count = 0;
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
     bool dup_bkey_found;
@@ -3152,30 +3120,15 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             goto scan_next;
         }
 
-        if (skip_count < offset) {
-            skip_count++;
-        } else { /* skip_count == offset */
-            if (smres->elem_count > 0 && dup_bkey_found) {
-                smres->duplicated = true;
-            }
-            smres->elem_array[smres->elem_count] = elem;
-            smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
-            smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
-            smres->elem_count += 1;
-#if 0 // JHPARK_SMGET_OFFSET_HANDLING
-            if (smres->elem_count == 1) { /* the first element is found */
-                if (offset > 0 && smres->trim_count > 0 &&
-                    do_btree_smget_check_trim(smres) != true) {
-                    /* Some elements are trimmed in 0 ~ offset range.
-                     * So, we cannot make the correct smget result.
-                     */
-                    ret = ENGINE_EBKEYOOR; break;
-                }
-            }
-#endif
-            elem->refcount++;
-            if (smres->elem_count >= count) break;
+        if (smres->elem_count > 0 && dup_bkey_found) {
+            smres->duplicated = true;
         }
+        smres->elem_array[smres->elem_count] = elem;
+        smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
+        smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
+        smres->elem_count += 1;
+        elem->refcount++;
+        if (smres->elem_count >= count) break;
 
 scan_next:
         info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
@@ -3187,15 +3140,6 @@ scan_next:
                 if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
                     outside = bplus_posi_outside(&btree_scan_buf[curr_idx].posi, bkrtype);
                     if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-#if 0 // JHPARK_SMGET_OFFSET_HANDLING
-                        if (skip_count < offset) {
-                            /* Some elements are trimmed in 0 ~ offset range.
-                            * So, we cannot make correct smget result.
-                            */
-                            assert(smres->elem_count == 0);
-                            ret = ENGINE_EBKEYOOR; break;
-                        }
-#endif
                         trim_elem = (btree_elem_item *)(ascending ? bplus_get_last_elem(info->bplus.root)
                                                                   : bplus_get_first_elem(info->bplus.root));
                         do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, trim_elem);
@@ -3712,20 +3656,20 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
 #ifdef SUPPORT_BOP_SMGET
 ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
-                                   const uint32_t offset, const uint32_t count,
+                                   const uint32_t count,
                                    const bool unique,
                                    smget_result_t *result)
 {
-    btree_scan_info btree_scan_buf[offset+count+1]; /* one more scan needed */
-    uint16_t        sort_sindx_buf[offset+count];   /* sorted scan index buffer */
+    btree_scan_info btree_scan_buf[count+1]; /* one more scan needed */
+    uint16_t        sort_sindx_buf[count];   /* sorted scan index buffer */
     uint32_t        sort_sindx_cnt, i;
     int             bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret;
 
     /* prepare */
-    for (i = 0; i <= (offset+count); i++) {
+    for (i = 0; i <= count; i++) {
         btree_scan_buf[i].it = NULL;
-        btree_scan_buf[i].next = (i < (offset+count)) ? (i+1) : -1;
+        btree_scan_buf[i].next = (i < count) ? (i+1) : -1;
     }
 
     /* set the ascending field of smget result */
@@ -3735,7 +3679,7 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
     do {
         /* the 1st phase: get the sorted scans */
         ret = do_btree_smget_scan_sort(key_array, key_count,
-                                       bkrtype, bkrange, efilter, (offset+count), unique,
+                                       bkrtype, bkrange, efilter, count, unique,
                                        btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                        result);
         if (ret != ENGINE_SUCCESS) {
@@ -3744,13 +3688,13 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
 
         /* the 2nd phase: get the sorted elems */
         ret = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
-                                       bkrtype, bkrange, efilter, offset, count, unique,
+                                       bkrtype, bkrange, efilter, count, unique,
                                        result);
         if (ret != ENGINE_SUCCESS) {
             break;
         }
 
-        for (i = 0; i <= (offset+count); i++) {
+        for (i = 0; i <= count; i++) {
             if (btree_scan_buf[i].it != NULL)
                 do_item_release(btree_scan_buf[i].it);
         }
