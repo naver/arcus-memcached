@@ -112,6 +112,7 @@ void UNLOCK_SETTING(void) {
 static pthread_mutex_t shutdown_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t memcached_shutdown=0;
 volatile rel_time_t shutdown_time=0;
+static bool shutdown_server(int delay);
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -10458,11 +10459,6 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
     }
 #endif
 
-    if (memcached_shutdown > 0 && shutdown_time <= current_time) {
-        out_string(c, "DENIED");
-        return;
-    }
-
     if (ntokens == 2) {
         delay = 2;
     } else {
@@ -10476,14 +10472,12 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
             return;
         }
     }
+    if (!shutdown_server(delay)) {
+        out_string(c, "DENIED");
+        return;
+    }
     mc_logger->log(EXTENSION_LOG_WARNING, c,
                    "shutdown scheduled (time=%d)\n", (int)delay);
-    shutdown_time = current_time + delay;
-    pthread_mutex_lock(&shutdown_lock);
-    if (memcached_shutdown == 0) {
-        memcached_shutdown = 1;
-    }
-    pthread_mutex_unlock(&shutdown_lock);
     out_string(c, "OK");
 }
 
@@ -14900,23 +14894,6 @@ static int server_socket_unix(const char *path, int access_mask)
     return 0;
 }
 
-#ifdef ENABLE_ZK_INTEGRATION
-static void shutdown_zk_resources(void)
-{
-    static bool zk_finalized = false;
-
-    if (arcus_zk_cfg == NULL || zk_finalized) {
-        return;
-    }
-    zk_finalized = true;
-
-    /* final zk module */
-    arcus_zk_final("graceful shutdown");
-    /* final mc heartbeat */
-    arcus_hb_final();
-}
-#endif
-
 static struct event clockevent;
 
 static void clock_handler(const int fd, const short which, void *arg)
@@ -14925,10 +14902,13 @@ static void clock_handler(const int fd, const short which, void *arg)
     static bool initialized = false;
 
     if (memcached_shutdown) {
+        bool shutdown_ready = true;
 #ifdef ENABLE_ZK_INTEGRATION
-        shutdown_zk_resources();
+        if (arcus_zk_cfg != NULL) {
+            shutdown_ready = (arcus_zk_finalized() && arcus_hb_finalized());
+        }
 #endif
-        if (shutdown_time <= current_time) {
+        if (shutdown_ready && shutdown_time <= current_time) {
             if (settings.verbose > 0) {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
                         "Main thread is now terminating from clock handler.\n");
@@ -15124,14 +15104,35 @@ static void remove_pidfile(const char *pid_file)
     }
 }
 
-static void shutdown_server(void)
+static bool shutdown_server(int delay)
 {
-    shutdown_time = 0;
+    rel_time_t new_time = current_time + delay;
+    bool updated = false;
+
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
+        shutdown_time = new_time;
         memcached_shutdown = 1;
+        updated = true;
+#ifdef ENABLE_ZK_INTEGRATION
+        if (arcus_zk_cfg != NULL) {
+            /* final zk module */
+            arcus_zk_final("graceful shutdown");
+            /* final mc heartbeat */
+            arcus_hb_final();
+        }
+#endif
+    } else if (new_time < shutdown_time) {
+        shutdown_time = new_time;
+        updated = true;
     }
     pthread_mutex_unlock(&shutdown_lock);
+    return updated;
+}
+
+static void shutdown_server_cb(void)
+{
+    shutdown_server(1);
 }
 
 static void sigterm_handler(const int sig, const short which, void *arg)
@@ -15143,7 +15144,7 @@ static void sigterm_handler(const int sig, const short which, void *arg)
                        "memcached shutdown by signal(%s)\n",
                        (sig == SIGINT ? "SIGINT" : "SIGTERM"));
     }
-    shutdown_server();
+    shutdown_server(1);
 }
 
 static int install_sigterm_handler(void)
@@ -15481,7 +15482,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .is_zk_integrated = is_zk_integrated,
         .is_my_key = is_my_key,
 #endif
-        .shutdown = shutdown_server
+        .shutdown = shutdown_server_cb
     };
 
     static SERVER_STAT_API server_stat_api = {
@@ -16454,13 +16455,13 @@ int main (int argc, char **argv)
     /* initialize Arcus ZK cluster connection */
     if (arcus_zk_cfg) {
         /* init mc hearbeat */
-        if (arcus_hb_init(settings.port, mc_logger, shutdown_server) < 0) {
+        if (arcus_hb_init(settings.port, mc_logger, shutdown_server_cb) < 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to initialize arcus heartbeat.\n");
             exit(EXIT_FAILURE);
         }
         /* init zk module */
-        arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
+        arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger, shutdown_server_cb,
                       settings.verbose, settings.maxbytes, settings.port,
 #ifdef PROXY_SUPPORT
                       arcus_proxy_cfg,

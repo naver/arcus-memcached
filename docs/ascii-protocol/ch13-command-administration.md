@@ -11,7 +11,7 @@ ARCUS 서버를 운영 및 모니터링하기 위해 아래 명령들을 제공�
 - [KEY DUMP 명령](#key-dump)
 - [ZKENSEMBLE 명령](#zkensemble)
 - [HELP 명령](#help)
-- [SHUTODWN 명령](#shutdown)
+- [SHUTDOWN 명령](#shutdown)
 - [RELOAD 명령](#reload)
 
 <a id="flush"></a>
@@ -1086,17 +1086,18 @@ help [<subcommand>]\r\n
 ## shutdown 명령
 
 ARCUS Cache Server를 우아하게 종료한다.
-1. ZooKeeper 연결을 종료하여 자신의 캐시 노드 정보를 제거하고 Listen socket을 닫는다.
+1. ZooKeeper 연결을 종료하여 자신의 캐시 노드 정보를 제거한다.
 2. ZooKeeper에 연결된 클라이언트는 캐시 노드 정보가 제거된 event를 받아 캐시 서버와 연결을 종료하므로,
-클라이언트가 자연스럽게 종료될 때까지 대기한다.
-3. 클라이언트 연결 수가 줄어들지 않거나, 정해진 시간이 지나고 나면 프로세스를 종료한다.
+정해진 시간 동안 대기한다.
+3. 정해진 시간이 지나고 ZooKeeper 연결 종료가 완료되면 Listen socket을 닫고 프로세스를 종료한다.
 
 ```
 shutdown [<seconds>]\r\n
 ```
 - `<seconds>` - 프로세스 종료 전 대기 시간을 설정한다.
-  - 생략하면, 200ms 단위로 클라이언트 연결 감소를 확인하며 감소가 없으면 즉시 종료한다. 최대 2초 동안 감소가 완료되지 않으면 강제 종료한다.
-  - 지정하면, 지정한 시간까지 대기 후 종료한다. 지정된 기간이 짧으면 클라이언트 연결이 모두 끊어지기 전에 강제 종료할 수 있다.
+  - 생략하면, 2초로 설정된다.
+  - 지정된 기간이 짧으면 클라이언트 연결이 모두 끊어지기 전에 강제 종료할 수 있다.
+  - 대기 시간이 지나도 ZooKeeper 연결 종료가 완료되지 않았으면, 완료될 때까지 종료가 지연된다.
   - seconds의 최솟값은 0, 최댓값은 600이다.
 
 Response string과 그 의미는 아래와 같다.
@@ -1108,10 +1109,9 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad command line format" | protocol syntax 틀림 |
 | "CLIENT_ERROR invalid arguments" | 유효하지 않은 인자 |
 
-- 이미 shutdown 명령이 동작 중인 상태에서 새로운 shutdown 명령을 수신하는 경우 가장 최근에 수신한 명령을 기준으로 종료 시간이 설정된다.
-- 단, 아래 조건을 모두 만족하는 경우 새로운 shutdown 요청이 거부되고 `DENIED` 응답을 반환한다.
-  - 이미 shutdown 요청 수신하여 종료 대기 중
-  - 기존 shutdown 요청에 의한 종료 시간이 1초 이내로 남은 상태
+- 이미 shutdown 명령이 동작 중인 상태에서 새로운 shutdown 명령을 수신하는 경우,
+새로운 명령에 의한 종료 시간이 기존 종료 시간보다 이른 경우에만 종료 시간을 앞당긴다.
+- 새로운 명령에 의한 종료 시간이 기존 종료 시간과 같거나 늦으면 요청이 거부되고 `DENIED` 응답을 반환한다.
 
 <a id="reload"></a>
 ## reload 명령
