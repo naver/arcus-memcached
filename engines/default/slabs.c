@@ -354,6 +354,12 @@ static int do_smmgr_init(void)
     slabclass_t *p = &slabsp->slabclass[0];
     p->size = SM_BLOCK_SIZE;
     p->perslab = config->item_size_max / p->size;
+    if (p->perslab < 1) {
+        /* item_size_max(-I) smaller than SM_BLOCK_SIZE truncates this to 0,
+         * which is later used as a malloc() size and corrupts memory.
+         */
+        p->perslab = 1;
+    }
     p->rsvd_slabs = 0; // undefined
 
     return 0;
