@@ -16738,7 +16738,7 @@ int main (int argc, char **argv)
     }
 
     if (!init_engine(engine_handle, settings.engine_config, mc_logger)) {
-        return false;
+        exit(EXIT_FAILURE);
     }
 
     if (settings.verbose > 0) {
