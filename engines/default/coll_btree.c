@@ -151,10 +151,10 @@ static const void *btree_get_eflag(const bplus_elem_item *elem, uint32_t *neflag
 static void        btree_elem_delete_post(bplus_elem_item *elem, void *arg);
 
 static bplus_ops btree_bplus_ops = {
-    .get_bkey    = btree_get_bkey,
-    .get_eflag   = btree_get_eflag,
-    .tiebreak    = NULL,
-    .delete_post = btree_elem_delete_post
+    .get_bkey           = btree_get_bkey,
+    .get_eflag          = btree_get_eflag,
+    .get_value          = NULL,
+    .delete_post        = btree_elem_delete_post
 };
 
 static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
@@ -223,7 +223,7 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->stotal  = 0;
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->maxbkeyrange.len = BKEY_NULL;
-        bplus_init(&info->bplus, &btree_bplus_ops);
+        bplus_init(&info->bplus, &btree_bplus_ops, false);
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
 
         /* set if forced_btree_overflow_actions is given */
@@ -891,7 +891,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *el
     }
 
     /* insert the element */
-    find = (btree_elem_item *)bplus_elem_find(&info->bplus, elem->data, elem->nbkey, path);
+    find = (btree_elem_item *)bplus_elem_find(&info->bplus, elem->data, elem->nbkey, NULL, 0, path);
 
     if (find != NULL) {
         if (!replace_if_exist) {
@@ -937,7 +937,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
         }
     }
 
-    elem = (btree_elem_item *)bplus_elem_find(&info->bplus, bkey, nbkey, path);
+    elem = (btree_elem_item *)bplus_elem_find(&info->bplus, bkey, nbkey, NULL, 0, path);
 
     if (elem != NULL) {
         real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
