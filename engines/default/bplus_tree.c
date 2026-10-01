@@ -188,17 +188,10 @@ static bplus_indx_node *do_bplus_find_leaf(bplus_meta *bplus,
             comp = BKEY_COMP(bkey, nbkey, sep_bkey, sep_nbkey);
             if (comp == 0) {
                 /* bkey tie:
-                 *   1. unique bkeys        -> this is the answer
-                 *   2. duplicates allowed  -> narrow to leftmost(forward) or rightmost
+                 *   1. unique bkeys       -> this is the answer
+                 *   2. duplicates allowed -> narrow to leftmost(forward) or rightmost
                  */
                 if (!bplus->duplicate_bkeys) {
-                    *found_elem = elem;
-                    if (path) {
-                        path[node->ndepth].node = node;
-                        path[node->ndepth].indx = mid;
-                    }
-                    node = do_bplus_get_first_leaf(node->item[mid], path);
-                    assert(node->ndepth == 0);
                     break;
                 }
                 comp = forward ? -1 : 1;
@@ -207,6 +200,71 @@ static bplus_indx_node *do_bplus_find_leaf(bplus_meta *bplus,
             else           left  = mid+1;
         }
         if (left <= right) { /* found the element */
+            *found_elem = elem;
+            if (path) {
+                path[node->ndepth].node = node;
+                path[node->ndepth].indx = mid;
+            }
+            node = do_bplus_get_first_leaf(node->item[mid], path);
+            assert(node->ndepth == 0);
+            break;
+        }
+
+        if (path) {
+            path[node->ndepth].node = node;
+            path[node->ndepth].indx = right;
+        }
+        node = (bplus_indx_node *)(node->item[right]);
+    }
+    return node;
+}
+
+static bplus_indx_node *do_bplus_find_exact_leaf(bplus_meta *bplus,
+                                                 const void *bkey, const uint32_t nbkey,
+                                                 const void *value, const uint32_t nvalue,
+                                                 bplus_elem_posi *path,
+                                                 bplus_elem_item **found_elem)
+{
+    assert(bplus->duplicate_bkeys == (value != NULL));
+
+    bplus_indx_node *node = bplus->root;
+    bplus_ops *ops = bplus->ops;
+    bplus_elem_item *elem;
+    int mid, left, right, comp;
+    const void *sep_bkey;
+    uint32_t sep_nbkey;
+
+    *found_elem = NULL; /* the same (bkey, value) is not found */
+
+    while (node->ndepth > 0) {
+        left  = 1;
+        right = node->used_count-1;
+
+        while (left <= right) {
+            mid  = (left + right) / 2;
+            elem = bplus_get_first_elem(node->item[mid]); /* separator */
+            sep_bkey = ops->get_bkey(elem, &sep_nbkey);
+            comp = BKEY_COMP(bkey, nbkey, sep_bkey, sep_nbkey);
+            if (comp == 0) {
+                if (value == NULL) break;
+
+                uint32_t sep_nvalue;
+                const void *sep_value = ops->get_value(elem, &sep_nvalue);
+                comp = BINARY_COMP((const unsigned char *)value, nvalue,
+                                   (const unsigned char *)sep_value, sep_nvalue);
+                if (comp == 0) break;
+            }
+            if (comp <  0) right = mid-1;
+            else           left  = mid+1;
+        }
+        if (left <= right) { /* found the element */
+            *found_elem = elem;
+            if (path) {
+                path[node->ndepth].node = node;
+                path[node->ndepth].indx = mid;
+            }
+            node = do_bplus_get_first_leaf(node->item[mid], path);
+            assert(node->ndepth == 0);
             break;
         }
 
@@ -268,6 +326,13 @@ static void do_bplus_consistency_check(bplus_meta *bplus,
                     p_bkey = ops->get_bkey(p_elem, &p_nbkey);
                     c_bkey = ops->get_bkey(c_elem, &c_nbkey);
                     comp = BKEY_COMP(p_bkey, p_nbkey, c_bkey, c_nbkey);
+                    if (comp == 0 && bplus->duplicate_bkeys) {
+                        uint32_t p_nvalue, c_nvalue;
+                        const void *p_value = ops->get_value(p_elem, &p_nvalue);
+                        const void *c_value = ops->get_value(c_elem, &c_nvalue);
+                        comp = BINARY_COMP((const unsigned char *)p_value, p_nvalue,
+                                           (const unsigned char *)c_value, c_nvalue);
+                    }
                     assert(comp < 0);
                 }
                 p_elem = c_elem;
@@ -281,6 +346,13 @@ static void do_bplus_consistency_check(bplus_meta *bplus,
                 p_bkey = ops->get_bkey(p_elem, &p_nbkey);
                 c_bkey = ops->get_bkey(c_elem, &c_nbkey);
                 comp = BKEY_COMP(p_bkey, p_nbkey, c_bkey, c_nbkey);
+                if (comp == 0 && bplus->duplicate_bkeys) {
+                    uint32_t p_nvalue, c_nvalue;
+                    const void *p_value = ops->get_value(p_elem, &p_nvalue);
+                    const void *c_value = ops->get_value(c_elem, &c_nvalue);
+                    comp = BINARY_COMP((const unsigned char *)p_value, p_nvalue,
+                                       (const unsigned char *)c_value, c_nvalue);
+                }
                 assert(comp < 0);
             }
         }
@@ -914,6 +986,8 @@ static int do_bplus_elem_batch_get(bplus_elem_posi posi, const int count,
  */
 void bplus_init(bplus_meta *bplus, bplus_ops *ops, bool duplicate_bkeys)
 {
+    assert(duplicate_bkeys == (ops->get_value != NULL));
+
     bplus->root = NULL;
     bplus->ops = ops;
     bplus->tot_elem_cnt = 0;
@@ -922,10 +996,15 @@ void bplus_init(bplus_meta *bplus, bplus_ops *ops, bool duplicate_bkeys)
 
 bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
                                  const void *bkey, uint32_t nbkey,
+                                 const void *value, uint32_t nvalue,
                                  bplus_elem_posi *path)
 {
     if (bplus->root == NULL) {
         return NULL;
+    }
+
+    if (bplus->duplicate_bkeys) {
+        assert(value != NULL);
     }
 
     bplus_indx_node *node;
@@ -934,10 +1013,10 @@ bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
     int mid, left, right, comp;
 
     /* find leaf node */
-    node = do_bplus_find_leaf(bplus, bkey, nbkey, true, path, &elem);
+    node = do_bplus_find_exact_leaf(bplus, bkey, nbkey, value, nvalue, path, &elem);
     if (elem != NULL) { /* the ins_elem is found */
         /* while traversing to leaf node, the bkey can be found.
-         * refer to do_bplus_find_leaf() function.
+         * refer to do_bplus_find_exact_leaf() function.
          */
         path[0].node = node;
         path[0].indx = 0;
@@ -956,6 +1035,12 @@ bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
 
         ebkey = ops->get_bkey(elem, &enbkey);
         comp = BKEY_COMP(bkey, nbkey, ebkey, enbkey);
+        if (comp == 0 && bplus->duplicate_bkeys) {
+            uint32_t envalue;
+            const void *evalue = ops->get_value(elem, &envalue);
+            comp = BINARY_COMP((const unsigned char *)value, nvalue,
+                               (const unsigned char *)evalue, envalue);
+        }
         if (comp == 0) break;
         if (comp <  0) right = mid-1;
         else           left  = mid+1;
