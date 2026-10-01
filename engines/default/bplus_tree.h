@@ -61,7 +61,7 @@ typedef struct _bplus_indx_node {
 typedef struct {
     const void *(*get_bkey)(const bplus_elem_item *elem, uint32_t *nbkey);
     const void *(*get_eflag)(const bplus_elem_item *elem, uint32_t *neflag);
-    int (*tiebreak)(const bplus_elem_item *e1, const bplus_elem_item *e2);
+    const void *(*get_value)(const bplus_elem_item *elem, uint32_t *nvalue);
     void (*delete_post)(bplus_elem_item *elem, void *arg);
 } bplus_ops;
 
@@ -169,6 +169,7 @@ void bplus_init(bplus_meta *bplus, bplus_ops *ops, bool duplicate_bkeys);
 
 bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
                                  const void *bkey, uint32_t nbkey,
+                                 const void *value, uint32_t nvalue,
                                  bplus_elem_posi *path);
 bplus_elem_item *bplus_find_first(bplus_meta *bplus,
                                   const int bkrtype, const bkey_range *bkrange,

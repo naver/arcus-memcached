@@ -153,7 +153,7 @@ static void        btree_elem_delete_post(bplus_elem_item *elem, void *arg);
 static bplus_ops btree_bplus_ops = {
     .get_bkey    = btree_get_bkey,
     .get_eflag   = btree_get_eflag,
-    .tiebreak    = NULL,
+    .get_value   = NULL,
     .delete_post = btree_elem_delete_post
 };
 
@@ -891,7 +891,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *el
     }
 
     /* insert the element */
-    find = (btree_elem_item *)bplus_elem_find(&info->bplus, elem->data, elem->nbkey, path);
+    find = (btree_elem_item *)bplus_elem_find(&info->bplus, elem->data, elem->nbkey, NULL, 0, path);
 
     if (find != NULL) {
         if (!replace_if_exist) {
@@ -937,7 +937,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
         }
     }
 
-    elem = (btree_elem_item *)bplus_elem_find(&info->bplus, bkey, nbkey, path);
+    elem = (btree_elem_item *)bplus_elem_find(&info->bplus, bkey, nbkey, NULL, 0, path);
 
     if (elem != NULL) {
         real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
