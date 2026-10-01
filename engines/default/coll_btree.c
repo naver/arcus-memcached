@@ -223,7 +223,7 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->stotal  = 0;
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->maxbkeyrange.len = BKEY_NULL;
-        bplus_init(&info->bplus, &btree_bplus_ops);
+        bplus_init(&info->bplus, &btree_bplus_ops, false);
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
 
         /* set if forced_btree_overflow_actions is given */

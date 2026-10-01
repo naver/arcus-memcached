@@ -69,6 +69,7 @@ typedef struct _bplus_meta {
     bplus_indx_node *root;
     bplus_ops       *ops;
     uint32_t         tot_elem_cnt;
+    bool             duplicate_bkeys; /* true => allow duplicate bkeys, false => unique bkeys */
 } bplus_meta;
 
 /* bplus element position */
@@ -164,7 +165,7 @@ static inline bplus_elem_item *bplus_get_last_elem(bplus_indx_node *node)
     return (bplus_elem_item *)(node->item[node->used_count-1]);
 }
 
-void bplus_init(bplus_meta *bplus, bplus_ops *ops);
+void bplus_init(bplus_meta *bplus, bplus_ops *ops, bool duplicate_bkeys);
 
 bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
                                  const void *bkey, uint32_t nbkey,
