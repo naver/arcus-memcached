@@ -164,6 +164,7 @@ static void do_bplus_decr_path(bplus_elem_posi *path, int depth)
 
 static bplus_indx_node *do_bplus_find_leaf(bplus_meta *bplus,
                                            const void *bkey, const uint32_t nbkey,
+                                           const bool forward,
                                            bplus_elem_posi *path,
                                            bplus_elem_item **found_elem)
 {
@@ -185,15 +186,22 @@ static bplus_indx_node *do_bplus_find_leaf(bplus_meta *bplus,
             elem = bplus_get_first_elem(node->item[mid]); /* separator */
             sep_bkey = ops->get_bkey(elem, &sep_nbkey);
             comp = BKEY_COMP(bkey, nbkey, sep_bkey, sep_nbkey);
-            if (comp == 0) { /* the same bkey is found */
-                *found_elem = elem;
-                if (path) {
-                    path[node->ndepth].node = node;
-                    path[node->ndepth].indx = mid;
+            if (comp == 0) {
+                /* bkey tie:
+                 *   1. unique bkeys        -> this is the answer
+                 *   2. duplicates allowed  -> narrow to leftmost(forward) or rightmost
+                 */
+                if (!bplus->duplicate_bkeys) {
+                    *found_elem = elem;
+                    if (path) {
+                        path[node->ndepth].node = node;
+                        path[node->ndepth].indx = mid;
+                    }
+                    node = do_bplus_get_first_leaf(node->item[mid], path);
+                    assert(node->ndepth == 0);
+                    break;
                 }
-                node = do_bplus_get_first_leaf(node->item[mid], path);
-                assert(node->ndepth == 0);
-                break;
+                comp = forward ? -1 : 1;
             }
             if (comp <  0) right = mid-1;
             else           left  = mid+1;
@@ -904,11 +912,12 @@ static int do_bplus_elem_batch_get(bplus_elem_posi posi, const int count,
 /*
  * Bplus Interface Functions
  */
-void bplus_init(bplus_meta *bplus, bplus_ops *ops)
+void bplus_init(bplus_meta *bplus, bplus_ops *ops, bool duplicate_bkeys)
 {
     bplus->root = NULL;
     bplus->ops = ops;
     bplus->tot_elem_cnt = 0;
+    bplus->duplicate_bkeys = duplicate_bkeys;
 }
 
 bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
@@ -925,7 +934,7 @@ bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
     int mid, left, right, comp;
 
     /* find leaf node */
-    node = do_bplus_find_leaf(bplus, bkey, nbkey, path, &elem);
+    node = do_bplus_find_leaf(bplus, bkey, nbkey, true, path, &elem);
     if (elem != NULL) { /* the ins_elem is found */
         /* while traversing to leaf node, the bkey can be found.
          * refer to do_bplus_find_leaf() function.
@@ -993,6 +1002,7 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
 
     /* find leaf node */
     node = do_bplus_find_leaf(bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                              (bkrtype != BKEY_RANGE_TYPE_DSC),
                               (path_flag ? path : NULL), &elem);
     if (elem != NULL) { /* the bkey(from_bkey) is found */
         /* while traversing to leaf node, the bkey can be found.
