@@ -208,6 +208,23 @@ extern "C" {
                                                 const char *dta));
 
         /**
+         * Did the handler take this command away to answer later?
+         *
+         * Asked right after execute() returned true, for the same connection.
+         * NULL means the answer is already in the response buffer and the
+         * command is done -- which is what every handler did before this
+         * existed, so leaving this member NULL keeps the old behaviour.
+         *
+         * Anything else is the function the core calls once the handler says
+         * the answer is ready, by way of notify_io_complete(). Until then the
+         * connection waits in conn_waking, out of the event loop.
+         *
+         * @param cmd_cookie cookie registered with the command
+         * @param cookie identifying the client connection
+         */
+        AIO_CALLBACK (*pending)(const void *cmd_cookie, const void *cookie);
+
+        /**
          * abort the command.
          *
          * @param cmd_cookie cookie registered with the command

@@ -767,6 +767,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     UNLOCK_STATS();
 
     c->aiostat = ENGINE_SUCCESS;
+    c->aiocb = NULL;
     c->ewouldblock = false;
     c->io_blocked = false;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
@@ -1168,6 +1169,8 @@ const char *state_text(STATE_FUNC state)
         return "conn_closing";
     } else if (state == conn_mwrite) {
         return "conn_mwrite";
+    } else if (state == conn_waking) {
+        return "conn_waking";
     } else {
         return "Unknown";
     }
@@ -7648,7 +7651,11 @@ static void complete_nread_ascii(conn *c)
                                    ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
+            if (c->ascii_cmd->pending &&
+                (c->aiocb = c->ascii_cmd->pending(c->ascii_cmd->cookie, c)) != NULL) {
+                c->ewouldblock = true;
+                conn_set_state(c, conn_waking);
+            } else if (c->dynamic_buffer.buffer != NULL) {
                 write_and_free(c, c->dynamic_buffer.buffer,
                                c->dynamic_buffer.offset);
                 c->dynamic_buffer.buffer = NULL;
@@ -9879,7 +9886,10 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
                           ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
+            if (cmd->pending != NULL && (c->aiocb = cmd->pending(cmd->cookie, c)) != NULL) {
+                c->ewouldblock = true;
+                conn_set_state(c, conn_waking);
+            } else if (c->dynamic_buffer.buffer != NULL) {
                 write_and_free(c, c->dynamic_buffer.buffer,
                                c->dynamic_buffer.offset);
                 c->dynamic_buffer.buffer = NULL;
@@ -14339,6 +14349,22 @@ bool conn_swallow(conn *c)
 
     conn_set_state(c, conn_closing);
     return true;
+}
+
+bool conn_waking(conn *c)
+{
+    if (c->aiocb != NULL) {
+        c->aiocb(c);
+        c->aiocb = NULL;
+        if (c->dynamic_buffer.buffer != NULL) {
+            write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
+            c->dynamic_buffer.buffer = NULL;
+        }
+        return true;
+    }
+
+    conn_set_state(c, conn_waiting);
+    return false;
 }
 
 bool conn_nread(conn *c)
