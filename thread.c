@@ -370,8 +370,8 @@ static void thread_libevent_process(int fd, short which, void *arg)
     }
 
     LOCK_THREAD(me);
-    conn* pending = me->pending_io;
-    me->pending_io = NULL;
+    conn* pending = me->pending_async;
+    me->pending_async = NULL;
     UNLOCK_THREAD(me);
     while (pending) {
         conn *c = pending;
@@ -436,26 +436,26 @@ static conn* list_remove(conn *haystack, conn *needle)
     return haystack;
 }
 
-bool should_io_blocked(const void *cookie)
+bool should_async_blocked(const void *cookie)
 {
     struct conn *c = (struct conn *)cookie;
     LIBEVENT_THREAD *thr = c->thread;
     bool blocked = false;
 
     LOCK_THREAD(thr);
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-    if (c->current_io_wait > 0) {
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
+    if (c->current_async_wait > 0) {
         event_del(&c->event);
-        c->io_blocked = true;
+        c->async_blocked = true;
         blocked = true;
     }
 #else
-    if (c->premature_io_complete) {
-        /* notify_io_complete was called before we got here */
-        c->premature_io_complete = false;
+    if (c->premature_async_complete) {
+        /* async_complete was called before we got here */
+        c->premature_async_complete = false;
     } else {
         event_del(&c->event);
-        c->io_blocked = true;
+        c->async_blocked = true;
         blocked = true;
     }
 #endif
@@ -464,24 +464,25 @@ bool should_io_blocked(const void *cookie)
     return blocked;
 }
 
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-void waitfor_io_complete(const void *cookie)
+void async_begin(const void *cookie)
 {
     struct conn *c = (struct conn *)cookie;
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
     LIBEVENT_THREAD *thr = c->thread;
 
-    /* This function must be called before IO completion.
-     * Therefore, the premature_io_complete is always 0.
+    /* This function must be called before the async completion.
+     * Therefore, the premature_async_complete is always 0.
      */
     LOCK_THREAD(thr);
-    if (c->premature_io_complete > 0) {
-        c->premature_io_complete -= 1;
+    if (c->premature_async_complete > 0) {
+        c->premature_async_complete -= 1;
     } else {
-        c->current_io_wait += 1;
+        c->current_async_wait += 1;
     }
     UNLOCK_THREAD(thr);
-}
 #endif
+    c->ewouldblock = true;
+}
 
 static int number_of_pending(conn *c, conn *list)
 {
@@ -494,7 +495,7 @@ static int number_of_pending(conn *c, conn *list)
     return rv;
 }
 
-void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
+void async_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
     struct conn *conn = (struct conn *)cookie;
 
@@ -509,7 +510,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     */
     LIBEVENT_THREAD *thr = conn->thread;
 
-    if (thr == NULL || conn->state == conn_closing) {
+    if (thr == NULL || conn->ignore_async_complete) {
         return;
     }
 
@@ -517,46 +518,46 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     bool premature_notify = false;
 
     LOCK_THREAD(thr);
-    if (thr == conn->thread && conn->state != conn_closing) {
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-        if (conn->current_io_wait > 0) {
-            conn->current_io_wait -= 1;
-            if (conn->current_io_wait == 0 && conn->io_blocked) {
-                conn->io_blocked = false;
-                conn->aiostat = status; /* meaning-less status */
+    if (thr == conn->thread && !conn->ignore_async_complete) {
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
+        if (conn->current_async_wait > 0) {
+            conn->current_async_wait -= 1;
+            if (conn->current_async_wait == 0 && conn->async_blocked) {
+                conn->async_blocked = false;
+                conn->async_status = status; /* meaning-less status */
 
-                int pended = number_of_pending(conn, thr->pending_io);
+                int pended = number_of_pending(conn, thr->pending_async);
                 if (pended == 0) {
-                    if (thr->pending_io == NULL) {
+                    if (thr->pending_async == NULL) {
                         notify_thread = true;
                     }
-                    conn->next = thr->pending_io;
-                    thr->pending_io = conn;
+                    conn->next = thr->pending_async;
+                    thr->pending_async = conn;
                     pended = 1;
                 }
                 assert(pended == 1);
             }
         } else {
-            conn->premature_io_complete += 1;
+            conn->premature_async_complete += 1;
             premature_notify = true;
         }
 #else
-        if (conn->io_blocked) {
-            conn->io_blocked = false;
-            conn->aiostat = status;
+        if (conn->async_blocked) {
+            conn->async_blocked = false;
+            conn->async_status = status;
 
-            int pended = number_of_pending(conn, thr->pending_io);
+            int pended = number_of_pending(conn, thr->pending_async);
             if (pended == 0) {
-                if (thr->pending_io == NULL) {
+                if (thr->pending_async == NULL) {
                     notify_thread = true;
                 }
-                conn->next = thr->pending_io;
-                thr->pending_io = conn;
+                conn->next = thr->pending_async;
+                thr->pending_async = conn;
                 pended = 1;
             }
             assert(pended == 1);
         } else {
-            conn->premature_io_complete = true;
+            conn->premature_async_complete = true;
             premature_notify = true;
         }
 #endif
@@ -571,28 +572,29 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         }
     } else {
         if (premature_notify) {
-#ifdef MULTI_NOTIFY_IO_COMPLETE
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Premature notify_io_complete\n");
+                    "Premature async_complete\n");
 #else
             mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "Premature notify_io_complete\n");
+                    "Premature async_complete\n");
 #endif
         }
     }
 }
 
-void remove_io_pending(const void *cookie)
+void remove_async_pending(const void *cookie)
 {
     struct conn *c = (struct conn *)cookie;
     LIBEVENT_THREAD *thr = c->thread;
 
     LOCK_THREAD(thr);
-    if (settings.verbose > 1 && list_contains(thr->pending_io, c)) {
+    if (settings.verbose > 1 && list_contains(thr->pending_async, c)) {
         mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                       "Current connection was in the pending-io list.. Nuking it\n");
+                       "Current connection was in the pending-async list.. Nuking it\n");
     }
-    thr->pending_io = list_remove(thr->pending_io, c);
+    thr->pending_async = list_remove(thr->pending_async, c);
+    c->ignore_async_complete = true;
     UNLOCK_THREAD(thr);
 }
 

@@ -248,7 +248,7 @@ static void do_cmdlog_callback_and_free_waiters(log_waiter_t *waiters)
 
     /* Do callbacks on all waiters */
     while (waiter != NULL) {
-        engine->server.core->notify_io_complete(waiter->cookie, ENGINE_SUCCESS);
+        engine->server.async->complete(waiter->cookie, ENGINE_SUCCESS);
         waiter = waiter->wait_next;
     }
 
@@ -373,10 +373,8 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 
         cmdlog_get_fsync_lsn(&now_fsync_lsn);
         if (LOGSN_IS_LE(&now_fsync_lsn, &waiter->lsn)) {
-#ifdef MULTI_NOTIFY_IO_COMPLETE
             /* Let it know that it must wait for IO completion */
-            engine->server.core->waitfor_io_complete(waiter->cookie);
-#endif
+            engine->server.async->begin(waiter->cookie);
             /* add waiter to group commit list */
             pthread_mutex_lock(&gcommit->lock);
             do_cmdlog_add_commit_waiter(waiter);
@@ -384,7 +382,6 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
                 do_cmdlog_gcommit_thread_wakeup(gcommit, false);
             }
             pthread_mutex_unlock(&gcommit->lock);
-            *result = ENGINE_EWOULDBLOCK;
             return;
         }
     }
