@@ -480,6 +480,7 @@ void waitfor_io_complete(const void *cookie)
         c->current_io_wait += 1;
     }
     UNLOCK_THREAD(thr);
+    c->ewouldblock = true;
 }
 #endif
 
