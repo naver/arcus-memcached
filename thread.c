@@ -461,6 +461,10 @@ bool should_io_blocked(const void *cookie)
 #endif
     UNLOCK_THREAD(thr);
 
+    if (blocked && c->state == conn_closing) {
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "Blocked in conn_closing. The IO must be completed before closing.\n");
+    }
     return blocked;
 }
 
@@ -480,6 +484,7 @@ void waitfor_io_complete(const void *cookie)
         c->current_io_wait += 1;
     }
     UNLOCK_THREAD(thr);
+    c->ewouldblock = true;
 }
 #endif
 
@@ -509,7 +514,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     */
     LIBEVENT_THREAD *thr = conn->thread;
 
-    if (thr == NULL || conn->state == conn_closing) {
+    if (thr == NULL) {
         return;
     }
 
@@ -517,7 +522,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     bool premature_notify = false;
 
     LOCK_THREAD(thr);
-    if (thr == conn->thread && conn->state != conn_closing) {
+    if (thr == conn->thread) {
 #ifdef MULTI_NOTIFY_IO_COMPLETE
         if (conn->current_io_wait > 0) {
             conn->current_io_wait -= 1;
