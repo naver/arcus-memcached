@@ -768,6 +768,8 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+    c->aiocb = NULL;
+    c->aiocb_data = NULL;
     c->io_blocked = false;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
     c->current_io_wait = 0;
@@ -952,6 +954,8 @@ static void conn_cleanup(conn *c)
     c->engine_storage = NULL;
     c->ascii_cmd = NULL;
     c->ewouldblock = false;
+    c->aiocb = NULL;
+    c->aiocb_data = NULL;
     c->io_blocked = false;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
     c->current_io_wait = 0;
@@ -1173,6 +1177,8 @@ const char *state_text(STATE_FUNC state)
         return "conn_closing";
     } else if (state == conn_mwrite) {
         return "conn_mwrite";
+    } else if (state == conn_io_callback) {
+        return "conn_io_callback";
     } else {
         return "Unknown";
     }
@@ -7653,7 +7659,9 @@ static void complete_nread_ascii(conn *c)
                                    ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
+            if (c->aiocb != NULL) {
+                conn_set_state(c, conn_io_callback);
+            } else if (c->dynamic_buffer.buffer != NULL) {
                 write_and_free(c, c->dynamic_buffer.buffer,
                                c->dynamic_buffer.offset);
                 c->dynamic_buffer.buffer = NULL;
@@ -9884,7 +9892,9 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
                           ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
+            if (c->aiocb != NULL) {
+                conn_set_state(c, conn_io_callback);
+            } else if (c->dynamic_buffer.buffer != NULL) {
                 write_and_free(c, c->dynamic_buffer.buffer,
                                c->dynamic_buffer.offset);
                 c->dynamic_buffer.buffer = NULL;
@@ -14206,6 +14216,24 @@ bool conn_listening(conn *c)
     return false;
 }
 
+bool conn_io_callback(conn *c)
+{
+    if (!c->aiocb(c, c->aiocb_data, ascii_response_handler)) {
+        conn_set_state(c, conn_closing);
+    } else {
+        if (c->dynamic_buffer.buffer != NULL) {
+            write_and_free(c, c->dynamic_buffer.buffer,
+                           c->dynamic_buffer.offset);
+            c->dynamic_buffer.buffer = NULL;
+        } else {
+            conn_set_state(c, conn_new_cmd);
+        }
+    }
+    c->aiocb = NULL;
+    c->aiocb_data = NULL;
+    return true;
+}
+
 bool conn_waiting(conn *c)
 {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
@@ -15245,6 +15273,15 @@ static bool get_noreply(const void *cookie)
     return c->noreply;
 }
 
+static void on_io_complete(const void *cookie, AIO_CALLBACK cb,
+                           void *cb_data)
+{
+    conn *c = (conn *)cookie;
+    assert(cb != NULL && c->aiocb == NULL);
+    c->aiocb = cb;
+    c->aiocb_data = cb_data;
+}
+
 static void *new_independent_stats(void)
 {
     return threadlocal_stats_create(settings.num_threads);
@@ -15470,6 +15507,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .waitfor_io_complete = waitfor_io_complete,
 #endif
         .notify_io_complete = notify_io_complete,
+        .on_io_complete = on_io_complete,
         .get_current_time = get_current_time,
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
         .prefix_stats_insert = prefix_stats_insert,

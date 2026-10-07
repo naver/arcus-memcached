@@ -198,7 +198,8 @@ extern "C" {
          * @param argv the argument vector
          * @param response_handler callback to add data to the return buffer
          * @return true if "success" or false if the client should be
-         *              disconnected.
+         *              disconnected. Before returning false, notify all
+         *              the IO waited for and free cb_data, if any.
          */
         bool (*execute)(const void *cmd_cookie,
                         const void *cookie,

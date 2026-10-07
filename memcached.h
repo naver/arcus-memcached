@@ -446,6 +446,8 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+    AIO_CALLBACK aiocb;     /* callback registered by on_io_complete() */
+    void *aiocb_data;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
     /* ewouldblock=true is set when the command returns EWOULDBLOCK.
      * The worker thread is going to remove the connection from the
@@ -637,6 +639,7 @@ bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
+bool conn_io_callback(conn *c);
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
