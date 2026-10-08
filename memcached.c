@@ -932,6 +932,11 @@ static void conn_cleanup(conn *c)
         c->write_and_free = 0;
     }
 
+    if (c->dynamic_buffer.buffer != NULL) {
+        free(c->dynamic_buffer.buffer);
+        c->dynamic_buffer.buffer = NULL;
+    }
+
 #ifdef SASL_ENABLED
     if (c->sasl_conn) {
         sasl_dispose((sasl_conn_t **)&c->sasl_conn);
