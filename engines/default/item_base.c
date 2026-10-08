@@ -1017,6 +1017,14 @@ ENGINE_ERROR_CODE do_item_link(hash_item *it)
     item_link_q(it);
     CLOG_ITEM_LINK(it);
 
+    if (IS_MAP_ITEM(it) &&
+        ((coll_meta_info *)item_get_meta(it))->mflags & COLL_META_FLAG_EVENT) {
+        event_data_t ev = { .type = EVENT_ITEM_LINK, .target = it, .ref_delta = 0 };
+        engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
+        /* Allow refcount adjustment to manage item's lifecycle. */
+        it->refcount += ev.ref_delta;
+    }
+
     /* update item statistics */
     do_item_stat_link(it, stotal);
 
@@ -1033,6 +1041,13 @@ void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 
     if ((it->iflag & ITEM_LINKED) != 0) {
         CLOG_ITEM_UNLINK(it, cause);
+
+        if (IS_MAP_ITEM(it) && ((coll_meta_info *)item_get_meta(it))->mflags & COLL_META_FLAG_EVENT) {
+            event_data_t ev = { .type = EVENT_ITEM_UNLINK, .target = it, .ref_delta = 0 };
+            engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
+            /* Allow refcount adjustment to manage item's lifecycle. */
+            it->refcount -= ev.ref_delta;
+        }
 
         /* unlink the item from LRU list */
         item_unlink_q(it);

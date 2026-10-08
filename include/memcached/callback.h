@@ -17,10 +17,11 @@ extern "C" {
         ON_DISCONNECT  = 1,     /**< A connection was terminated. */
         ON_AUTH        = 2,     /**< A connection was authenticated. */
         ON_SWITCH_CONN = 3,     /**< Processing a different connection on this thread. */
-        ON_LOG_LEVEL   = 4      /**< Changed log level */
+        ON_LOG_LEVEL   = 4,     /**< Changed log level */
+        ON_EVENT_ITEM  = 5      /**< Item lifecycle event */
     } ENGINE_EVENT_TYPE;
 
-    #define MAX_ENGINE_EVENT_TYPE 5
+    #define MAX_ENGINE_EVENT_TYPE 6
 
     /**
      * Callback for server events.

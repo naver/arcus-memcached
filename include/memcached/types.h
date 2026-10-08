@@ -399,6 +399,7 @@ extern "C" {
         uint8_t  ovflaction;
         uint8_t  readable;
         uint8_t  trimmed;
+        uint8_t  event;
     } item_attr;
 
     /* Command authorization flags (bitmask) */
@@ -421,6 +422,23 @@ extern "C" {
         const char *username;
         const char *config;
     } auth_data_t;
+
+    /* Event types for item lifecycle events */
+    typedef enum {
+        EVENT_ITEM_LINK,
+        EVENT_ITEM_UNLINK,
+        EVENT_ELEM_INSERT,
+        EVENT_ELEM_DELETE,
+        EVENT_ELEM_REPLACE,
+    } event_type_t;
+
+    typedef struct {
+        event_type_t type;
+        void *coll_item;
+        void *target; // item or element
+        void *source; // item or element
+        uint16_t ref_delta; // refcount change of target/source
+    } event_data_t;
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;

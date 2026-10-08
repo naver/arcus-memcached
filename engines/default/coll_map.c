@@ -122,6 +122,7 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
         if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
+        if (attrp->event == 1)                 info->mflags |= COLL_META_FLAG_EVENT;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         htree_init(&info->htree, &map_htree_ops);
@@ -171,6 +172,16 @@ static void do_map_elem_delete_post(map_meta_info *info,
                                     enum elem_delete_cause cause)
 {
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
+
+    if (info->mflags & COLL_META_FLAG_EVENT) {
+        event_data_t ev = { .type = EVENT_ELEM_DELETE,
+                            .coll_item = COLL_GET_HASH_ITEM(info),
+                            .target = elem, .ref_delta = 0 };
+        engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
+        /* Allow refcount adjustment to manage elem's lifecycle. */
+        elem->refcount -= ev.ref_delta;
+    }
+
     info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
@@ -245,6 +256,17 @@ static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, htree_prev_inf
 
     CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
 
+    if (info->mflags & COLL_META_FLAG_EVENT) {
+        event_data_t ev = { .type = EVENT_ELEM_REPLACE,
+                            .coll_item = COLL_GET_HASH_ITEM(info),
+                            .target = new_elem, .source = old_elem,
+                            .ref_delta = 0 };
+        engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
+        /* Allow refcount adjustment to manage elem's lifecycle. */
+        new_elem->refcount += ev.ref_delta;
+        old_elem->refcount -= ev.ref_delta;
+    }
+
     size_t old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
     size_t new_stotal = slabs_space_size(do_map_elem_ntotal(new_elem));
 
@@ -277,6 +299,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
     }
 
     if (elem->refcount == 0 && elem->nbytes == nbytes) {
+        /* refcount == 0 => (info->mflags & COLL_META_FLAG_EVENT) == 0 */
         /* old body size == new body size */
         /* do in-place update */
         memcpy(elem->data + elem->nfield, value, nbytes);
@@ -390,6 +413,16 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     }
 
     CLOG_MAP_ELEM_INSERT(info, NULL, elem);
+
+    if (info->mflags & COLL_META_FLAG_EVENT) {
+        event_data_t ev = { .type = EVENT_ELEM_INSERT,
+                            .coll_item = COLL_GET_HASH_ITEM(info),
+                            .target = elem, .ref_delta = 0 };
+        engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
+        /* Allow refcount adjustment to manage elem's lifecycle. */
+        elem->refcount += ev.ref_delta;
+    }
+
     info->ccnt++;
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem)) + space_increased;
