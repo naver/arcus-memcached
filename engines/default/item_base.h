@@ -124,6 +124,7 @@ enum elem_delete_cause {
 #define COLL_META_FLAG_READABLE 2
 #define COLL_META_FLAG_STICKY   4
 #define COLL_META_FLAG_TRIMMED  8
+#define COLL_META_FLAG_EVENT    16
 
 /* LRU id of small memory items */
 #define LRU_CLSID_FOR_SMALL 0
