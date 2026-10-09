@@ -197,9 +197,9 @@ typedef struct {
     int notify_send_fd;         /* sending end of notify pipe */
     struct conn_queue *new_conn_queue; /* queue of new connections to handle */
     cache_t *suffix_cache;      /* suffix cache */
-    pthread_mutex_t mutex;      /* Mutex to lock protect access to the pending_io */
+    pthread_mutex_t mutex;      /* Mutex to lock protect access to the pending_async */
     bool is_locked;
-    struct conn *pending_io;           /* List of connection with pending async io ops */
+    struct conn *pending_async;        /* List of connection with pending async works */
     struct conn *conn_list;            /* connection list managed by this thread */
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
@@ -210,12 +210,10 @@ typedef struct {
 bool   has_cycle(struct conn *c);
 size_t list_to_array(struct conn **dest, size_t max_items, struct conn **l);
 
-bool should_io_blocked(const void *cookie);
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-void waitfor_io_complete(const void *cookie);
-#endif
-void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
-void remove_io_pending(const void *cookie);
+bool should_async_blocked(const void *cookie);
+void async_begin(const void *cookie);
+void async_complete(const void *cookie, ENGINE_ERROR_CODE status);
+void remove_async_pending(const void *cookie);
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport);
 int  is_listen_thread(void);

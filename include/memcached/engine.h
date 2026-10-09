@@ -122,6 +122,7 @@ extern "C" {
         SERVER_CALLBACK_API *callback;
         ENGINE_HANDLE *engine;
         SERVER_LOG_API *log;
+        SERVER_ASYNC_API *async;
     };
 
     /**

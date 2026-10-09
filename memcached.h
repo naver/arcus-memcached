@@ -70,6 +70,9 @@
 /** Initial number of sendmsg() argument structures to allocate. */
 #define MSG_LIST_INITIAL 10
 
+/** Initial size of list of callbacks registered by on_wake(). */
+#define ASYNC_CB_LIST_INITIAL 8
+
 /** High water marks for buffer shrinking */
 #define READ_BUFFER_HIGHWAT 8192
 #define ITEM_LIST_HIGHWAT 400
@@ -271,6 +274,12 @@ extern union mc_engine mc_engine;
 typedef struct conn conn;
 typedef bool (*STATE_FUNC)(conn *);
 
+/* A callback registered by on_wake() */
+typedef struct {
+    ASYNC_CALLBACK cb;
+    void *cb_data;
+} async_callback;
+
 #include "thread.h"
 
 /**
@@ -444,62 +453,71 @@ struct conn {
     conn *conn_prev;  /* used in the conn_list of a thread in charge */
     conn *conn_next;  /* used in the conn_list of a thread in charge */
 
-    ENGINE_ERROR_CODE aiostat;
+    ENGINE_ERROR_CODE async_status;
     bool ewouldblock;
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-    /* ewouldblock=true is set when the command returns EWOULDBLOCK.
+
+    /* async works: see async_block_if_waiting and conn_async_done */
+    STATE_FUNC async_and_go;      /* which state to go into after finishing async works */
+    async_callback *async_cblist; /* callbacks registered by on_wake() */
+    int async_cbsize;             /* number of elements allocated in async_cblist[] */
+    int async_cbused;             /* number of elements used in async_cblist[] */
+    bool ignore_async_complete;   /* set when closed by conn_close() */
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
+    /* ewouldblock=true is set when the command starts an async work.
      * The worker thread is going to remove the connection from the
      * event loop and set ewouldblock=false.  But these two events
      * (set and remove from the event loop) do not happen atomically.
-     * Rarely, notify_io_complete runs before the worker thread removes
+     * Rarely, async_complete runs before the worker thread removes
      * the connection from the event loop.  Below, three more variables
      * deal with these cases...
      *
-     * io_blocked=true is set when the worker thread actually removes
+     * async_blocked=true is set when the worker thread actually removes
      * the connection from the event loop.  The thread locks itself
      * and then performs these two operations (set and event loop).
      *
-     * current_io_wait is the number of waiting for IO completion.
-     * waitfor_io_complete() increments the current_io_wait and it must be
-     * called in storage engine before notify_io_complete() is called.
+     * current_async_wait is the number of async works waited for.
+     * async_begin() increments the current_async_wait and it must be
+     * called before async_complete() is called.
      *
-     * premature_io_complete is the number of notifying IO completion.
-     * As the waitfor_io_complete() is called before the IO completion,
-     * the notify_io_complete() just decrements the current_io_wait.
+     * premature_async_complete is the number of async_complete() called
+     * before async_begin(). As the async_begin() is called before the
+     * async completion, the async_complete() just decrements the
+     * current_async_wait.
      *
-     * The work thread checks the current_io_wait value at the end of
-     * conn_parse_cmd and conn_nread state. If it is positive value,
-     * the thread blocks the current processing while setting io_blocked=true.
-     * If it is 0(zero), the thread continues the current processing
-     * without any blocking.
+     * The work thread checks the current_async_wait value at the end of
+     * conn_parse_cmd, conn_nread and conn_async_done state. If it is
+     * positive value, the thread blocks the current processing while
+     * setting async_blocked=true. If it is 0(zero), the thread continues
+     * the current processing without any blocking.
      *
-     * See conn_parse_cmd, conn_nread, waitfor_io_complete, and notify_io_complete.
+     * See conn_parse_cmd, conn_nread, conn_async_done, async_begin,
+     * and async_complete.
      */
-    bool io_blocked;
-    unsigned int current_io_wait;       /* num of current io wait */
-    unsigned int premature_io_complete; /* num of premature io complete */
+    bool async_blocked;
+    unsigned int current_async_wait;       /* num of async works waited for */
+    unsigned int premature_async_complete; /* num of premature async_complete */
 #else
-    /* ewouldblock=true is set when the command returns EWOULDBLOCK.
+    /* ewouldblock=true is set when the command starts an async work.
      * The worker thread is going to remove the connection from the
      * event loop and set ewouldblock=false.  But these two events
      * (set and remove from the event loop) do not happen atomically.
-     * Rarely, notify_io_complete runs before the worker thread removes
+     * Rarely, async_complete runs before the worker thread removes
      * the connection from the event loop.  Below, two more variables
      * deal with these cases...
      *
-     * io_blocked=true is set when the worker thread actually removes
+     * async_blocked=true is set when the worker thread actually removes
      * the connection from the event loop.  The thread locks itself
      * and then performs these two operations (set and event loop).
      *
-     * notify_io_complete locks the thread and checks io_blocked.
-     * If io_blocked=false, then we know for sure that the worker thread
+     * async_complete locks the thread and checks async_blocked.
+     * If async_blocked=false, then we know for sure that the worker thread
      * has not removed the connection yet.  So, it sets
-     * premature_io_complete=true.
+     * premature_async_complete=true.
      *
-     * See conn_parse_cmd, conn_nread, and notify_io_complete.
+     * See conn_parse_cmd, conn_nread, conn_async_done, and async_complete.
      */
-    bool io_blocked;
-    bool premature_io_complete;
+    bool async_blocked;
+    bool premature_async_complete;
 #endif
 };
 
@@ -637,6 +655,8 @@ bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
+bool conn_async_done(conn *c);
+bool conn_extension_done(conn *c);
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)

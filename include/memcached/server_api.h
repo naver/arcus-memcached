@@ -120,22 +120,6 @@ extern "C" {
          */
         bool (*get_noreply)(const void *cookie);
 
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-        /**
-         * Let a connection know that it must wait for IO completion.
-         * @param cookie cookie representing the connection
-         */
-        void (*waitfor_io_complete)(const void *cookie);
-
-#endif
-        /**
-         * Let a connection know that IO has completed.
-         * @param cookie cookie representing the connection
-         * @param status the status for the io operation
-         */
-        void (*notify_io_complete)(const void *cookie,
-                                   ENGINE_ERROR_CODE status);
-
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
         /**
          * Insert prefix operation stats entry for the given given prefix.
@@ -191,6 +175,46 @@ extern "C" {
         void (*evicting)(const void *key,
                          int nkey);
     } SERVER_STAT_API;
+
+    /**
+     * Callback registered by on_wake().
+     *
+     * @param cookie The cookie provided by the frontend
+     * @param cb_data data as registered
+     *
+     * @return true if succeeded, false otherwise.
+     */
+    typedef bool (*ASYNC_CALLBACK)(const void *cookie, void *cb_data);
+
+    typedef struct {
+        /**
+         * Let the connection wait for an async work.
+         * Call it on the worker thread, paired with one complete().
+         *
+         * @param cookie The cookie provided by the frontend
+         */
+        void (*begin)(const void *cookie);
+
+        /**
+         * Notify the connection that an async work is completed.
+         *
+         * @param cookie The cookie provided by the frontend
+         * @param status the status of the async work
+         */
+        void (*complete)(const void *cookie, ENGINE_ERROR_CODE status);
+
+        /**
+         * Register a callback to run after all the async works are completed.
+         * Call it on the worker thread.
+         *
+         * @param cookie The cookie provided by the frontend
+         * @param cb the callback to run
+         * @param cb_data the data passed to cb, valid until cb runs
+         *
+         * @return true if registered, false otherwise.
+         */
+        bool (*on_wake)(const void *cookie, ASYNC_CALLBACK cb, void *cb_data);
+    } SERVER_ASYNC_API;
 
 #ifdef __WIN32__
 #undef interface

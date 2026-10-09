@@ -87,7 +87,7 @@ static rel_time_t mock_realtime(const time_t exptime) {
     }
 }
 
-static void mock_notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status) {
+static void mock_async_complete(const void *cookie, ENGINE_ERROR_CODE status) {
     struct mock_connstruct *c = (struct mock_connstruct *)cookie;
     pthread_mutex_lock(&c->mutex);
     c->status = status;
@@ -232,6 +232,17 @@ static void mock_perform_callbacks(ENGINE_EVENT_TYPE type,
     }
 }
 
+static void mock_async_begin(const void *cookie) {
+    (void)cookie;
+}
+
+static bool mock_async_on_wake(const void *cookie, ASYNC_CALLBACK cb, void *cb_data) {
+    (void)cookie;
+    (void)cb;
+    (void)cb_data;
+    return false;
+}
+
 SERVER_HANDLE_V1 *get_mock_server_api(void)
 {
     static SERVER_CORE_API core_api = {
@@ -241,7 +252,6 @@ SERVER_HANDLE_V1 *get_mock_server_api(void)
         .server_version = mock_get_server_version,
         .hash = mock_hash,
         .realtime = mock_realtime,
-        .notify_io_complete = mock_notify_io_complete,
         .get_current_time = mock_get_current_time,
         .parse_config = mock_parse_config
     };
@@ -263,12 +273,19 @@ SERVER_HANDLE_V1 *get_mock_server_api(void)
         .perform_callbacks = mock_perform_callbacks
     };
 
+    static SERVER_ASYNC_API async_api = {
+        .begin = mock_async_begin,
+        .complete = mock_async_complete,
+        .on_wake = mock_async_on_wake
+    };
+
     static SERVER_HANDLE_V1 rv = {
         .interface = 1,
         .core = &core_api,
         .stat = &server_stat_api,
         .extension = &extension_api,
-        .callback = &callback_api
+        .callback = &callback_api,
+        .async = &async_api
     };
 
     return &rv;

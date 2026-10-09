@@ -38,7 +38,7 @@ struct iovec {
 //#define NEW_PREFIX_STATS_MANAGEMENT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
-#define MULTI_NOTIFY_IO_COMPLETE
+#define MULTI_NOTIFY_ASYNC_COMPLETE
 
 /** Maximum length of a prefix */
 #define PREFIX_MAX_LENGTH 250

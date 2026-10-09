@@ -578,6 +578,13 @@ static bool conn_reset_buffersize(conn *c)
         }
     }
 
+    /* allocated on demand by async_on_wake() */
+    if (c->async_cbsize != 0) {
+        free(c->async_cblist);
+        c->async_cblist = NULL;
+        c->async_cbsize = 0;
+    }
+
     return ret;
 }
 
@@ -633,6 +640,7 @@ static void conn_destructor(void *buffer, void *unused)
     free(c->suffixlist);
     free(c->iov);
     free(c->msglist);
+    free(c->async_cblist);
 
     LOCK_STATS();
     mc_stats.conn_structs--;
@@ -766,14 +774,17 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     mc_stats.total_conns++;
     UNLOCK_STATS();
 
-    c->aiostat = ENGINE_SUCCESS;
+    c->async_status = ENGINE_SUCCESS;
     c->ewouldblock = false;
-    c->io_blocked = false;
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-    c->current_io_wait = 0;
-    c->premature_io_complete = 0;
+    c->async_and_go = NULL;
+    c->async_cbused = 0;
+    c->ignore_async_complete = false;
+    c->async_blocked = false;
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
+    c->current_async_wait = 0;
+    c->premature_async_complete = 0;
 #else
-    c->premature_io_complete = false;
+    c->premature_async_complete = false;
 #endif
 
     /* save client ip address in connection object */
@@ -952,12 +963,14 @@ static void conn_cleanup(conn *c)
     c->engine_storage = NULL;
     c->ascii_cmd = NULL;
     c->ewouldblock = false;
-    c->io_blocked = false;
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-    c->current_io_wait = 0;
-    c->premature_io_complete = 0;
+    c->async_and_go = NULL;
+    c->async_cbused = 0;
+    c->async_blocked = false;
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
+    c->current_async_wait = 0;
+    c->premature_async_complete = 0;
 #else
-    c->premature_io_complete = false;
+    c->premature_async_complete = false;
 #endif
 }
 
@@ -985,8 +998,8 @@ void conn_close(conn *c)
     assert(c->thread);
     perform_callbacks(ON_DISCONNECT, NULL, c);
 
-    /* remove from pending-io list */
-    remove_io_pending(c);
+    /* remove from pending-async list and ignore the later async_complete() */
+    remove_async_pending(c);
 
     conn_cleanup(c);
     /* disconnect it from the conn_list of a thread in charge */
@@ -1173,6 +1186,10 @@ const char *state_text(STATE_FUNC state)
         return "conn_closing";
     } else if (state == conn_mwrite) {
         return "conn_mwrite";
+    } else if (state == conn_async_done) {
+        return "conn_async_done";
+    } else if (state == conn_extension_done) {
+        return "conn_extension_done";
     } else {
         return "Unknown";
     }
@@ -1622,7 +1639,7 @@ static void out_string(conn *c, const char *str)
         */
         if (c->ewouldblock) {
             c->ewouldblock = false;
-#ifdef MULTI_NOTIFY_IO_COMPLETE
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
             mc_logger->log(EXTENSION_LOG_WARNING, c,
                     "[FATAL] Unexpected ewouldblock in noreply processing.\n");
 #endif
@@ -7653,13 +7670,7 @@ static void complete_nread_ascii(conn *c)
                                    ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
-                write_and_free(c, c->dynamic_buffer.buffer,
-                               c->dynamic_buffer.offset);
-                c->dynamic_buffer.buffer = NULL;
-            } else {
-                conn_set_state(c, conn_new_cmd);
-            }
+            conn_set_state(c, conn_extension_done);
         }
     } else {
         complete_update_ascii(c);
@@ -9884,13 +9895,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
                           ascii_response_handler)) {
             conn_set_state(c, conn_closing);
         } else {
-            if (c->dynamic_buffer.buffer != NULL) {
-                write_and_free(c, c->dynamic_buffer.buffer,
-                               c->dynamic_buffer.offset);
-                c->dynamic_buffer.buffer = NULL;
-            } else {
-                conn_set_state(c, conn_new_cmd);
-            }
+            conn_set_state(c, conn_extension_done);
         }
     } else {
         c->ritem = ptr;
@@ -14206,6 +14211,101 @@ bool conn_listening(conn *c)
     return false;
 }
 
+/*
+ * Async works
+ *
+ * A command lets the connection wait for async works with async_begin(),
+ * and each work reports its completion with async_complete(). The
+ * connection sleeps in conn_async_done state until all the works are
+ * completed. If something has to be done after that, the command
+ * registers a callback with async_on_wake(), which runs in conn_async_done.
+ */
+static bool async_on_wake(const void *cookie, ASYNC_CALLBACK cb, void *cb_data)
+{
+    conn *c = (conn *)cookie;
+    assert(cb != NULL);
+
+    if (c->async_cbused >= c->async_cbsize) {
+        int nsize = (c->async_cbsize > 0) ? c->async_cbsize * 2 : ASYNC_CB_LIST_INITIAL;
+        async_callback *new_list = realloc(c->async_cblist,
+                                           nsize * sizeof(async_callback));
+        if (new_list == NULL) {
+            return false;
+        }
+        c->async_cblist = new_list;
+        c->async_cbsize = nsize;
+    }
+    c->async_cblist[c->async_cbused].cb = cb;
+    c->async_cblist[c->async_cbused].cb_data = cb_data;
+    c->async_cbused++;
+    return true;
+}
+
+static bool async_block_if_waiting(conn *c)
+{
+    if (!c->ewouldblock && c->async_cbused == 0) {
+        return false;
+    }
+    c->ewouldblock = false;
+    /* go through conn_async_done even if not blocked,
+     * to run the callbacks registered by on_wake().
+     */
+    c->async_and_go = c->state;
+    conn_set_state(c, conn_async_done);
+    return should_async_blocked(c);
+}
+
+bool conn_async_done(conn *c)
+{
+    int ncbs = c->async_cbused;
+
+    /* the callbacks may register new ones behind them, but must not change
+     * c->state: it is set to async_and_go after them.
+     */
+    /* FIXME: Once a callback fails, the connection will be closed. But the
+     * following callbacks and their async works still run, since each
+     * of them frees its cb_data. A way to tell them the failure may be
+     * needed to avoid the useless work.
+     */
+    for (int i = 0; i < ncbs; i++) {
+        async_callback e = c->async_cblist[i];
+        if (!e.cb(c, e.cb_data)) {
+            /* a callback has failed: close after all the async works are done */
+            c->async_and_go = conn_closing;
+        }
+    }
+    c->async_cbused -= ncbs;
+    if (c->async_cbused > 0) {
+        memmove(c->async_cblist, c->async_cblist + ncbs,
+                c->async_cbused * sizeof(async_callback));
+    }
+
+    /* the callbacks started new async works */
+    if (c->ewouldblock) {
+        c->ewouldblock = false;
+        if (should_async_blocked(c)) {
+            return false; /* sleep until the new works are done */
+        }
+    }
+    if (c->async_cbused > 0) {
+        return true; /* run the callbacks registered by the callbacks */
+    }
+
+    conn_set_state(c, c->async_and_go);
+    return true;
+}
+
+bool conn_extension_done(conn *c)
+{
+    if (c->dynamic_buffer.buffer != NULL) {
+        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
+        c->dynamic_buffer.buffer = NULL;
+    } else {
+        conn_set_state(c, conn_new_cmd);
+    }
+    return true;
+}
+
 bool conn_waiting(conn *c)
 {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
@@ -14245,17 +14345,12 @@ bool conn_parse_cmd(conn *c)
         conn_set_state(c, conn_waiting);
     }
 
-    /* try_read_command eventually calls write functions
-     * that may return EWOULDBLOCK and set ewouldblock true.
-     * So, remove the current connection from the event loop
-     * and wait for notify_io_complete event.
+    /* try_read_command may start async works or register callbacks.
+     * If so, wait for them in conn_async_done.
      * See also conn_nread.
      */
-    if (c->ewouldblock) {
-        c->ewouldblock = false;
-        if (should_io_blocked(c)) {
-            return false; /* blocked */
-        }
+    if (async_block_if_waiting(c)) {
+        return false; /* blocked */
     }
     return true;
 }
@@ -14353,17 +14448,12 @@ bool conn_nread(conn *c)
     if (c->rlbytes == 0) {
         complete_nread(c);
 
-        /* complete_nread eventually calls write functions
-         * that may return EWOULDBLOCK and set ewouldblock true.
-         * So, remove the current connection from the event loop
-         * and wait for notify_io_complete event.
+        /* complete_nread may start async works or register callbacks.
+         * If so, wait for them in conn_async_done.
          * See also conn_parse_cmd.
          */
-        if (c->ewouldblock) {
-            c->ewouldblock = false;
-            if (should_io_blocked(c)) {
-                return false; /* blocked */
-            }
+        if (async_block_if_waiting(c)) {
+            return false; /* blocked */
         }
         return true;
     }
@@ -14468,9 +14558,9 @@ bool conn_write(conn *c)
 
 bool conn_mwrite(conn *c)
 {
-    /* c->aiostat was set by notify_io_complete function.  */
-    if (c->aiostat != ENGINE_SUCCESS) {
-        /* The response must be reset according to c->aiostat. */
+    /* c->async_status was set by async_complete function.  */
+    if (c->async_status != ENGINE_SUCCESS) {
+        /* The response must be reset according to c->async_status. */
     }
 
     /* Clear the ewouldblock so that the next read command from
@@ -14478,7 +14568,7 @@ bool conn_mwrite(conn *c)
      */
     if (c->ewouldblock) {
         c->ewouldblock = false;
-#ifdef MULTI_NOTIFY_IO_COMPLETE
+#ifdef MULTI_NOTIFY_ASYNC_COMPLETE
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                 "[FATAL] Unexpected ewouldblock in conn_mwrite().\n");
 #endif
@@ -15466,10 +15556,6 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,
-#ifdef MULTI_NOTIFY_IO_COMPLETE
-        .waitfor_io_complete = waitfor_io_complete,
-#endif
-        .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
         .prefix_stats_insert = prefix_stats_insert,
@@ -15506,13 +15592,20 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .perform_callbacks = perform_callbacks,
     };
 
+    static SERVER_ASYNC_API async_api = {
+        .begin = async_begin,
+        .complete = async_complete,
+        .on_wake = async_on_wake,
+    };
+
     static SERVER_HANDLE_V1 rv = {
         .interface = 1,
         .core = &core_api,
         .stat = &server_stat_api,
         .extension = &extension_api,
         .callback = &callback_api,
-        .log = &server_log_api
+        .log = &server_log_api,
+        .async = &async_api
     };
 
     if (rv.engine == NULL) {
