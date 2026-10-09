@@ -27,6 +27,20 @@
 extern "C" {
 #endif
 
+    /**
+     * Callback registered by on_io_complete().
+     *
+     * @param cookie cookie representing the connection
+     * @param cb_data data as registered
+     * @param response_handler callback to add data to the return buffer
+     *
+     * @return true if succeeded, false otherwise.
+     */
+    typedef bool (*AIO_CALLBACK)(const void *cookie, void *cb_data,
+                                 bool (*response_handler)(const void *cookie,
+                                                          int nbytes,
+                                                          const char *dta));
+
     typedef struct {
         /**
          * The current time.
@@ -135,6 +149,19 @@ extern "C" {
          */
         void (*notify_io_complete)(const void *cookie,
                                    ENGINE_ERROR_CODE status);
+
+        /**
+         * Register a callback to run after all the IO the connection waits
+         * for has completed. The callback runs in conn_io_callback state,
+         * so the command must go to that state after it is processed.
+         * Only one callback can be registered at a time.
+         *
+         * @param cookie cookie representing the connection
+         * @param cb the callback to run on the worker thread
+         * @param cb_data the data passed to cb, valid until cb runs
+         */
+        void (*on_io_complete)(const void *cookie, AIO_CALLBACK cb,
+                               void *cb_data);
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
         /**
