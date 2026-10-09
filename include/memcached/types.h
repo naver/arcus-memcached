@@ -422,6 +422,8 @@ extern "C" {
         const char *config;
     } auth_data_t;
 
+    typedef void (*AIO_CALLBACK)(const void *cookie);
+
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
 #ifdef __cplusplus

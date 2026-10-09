@@ -445,6 +445,7 @@ struct conn {
     conn *conn_next;  /* used in the conn_list of a thread in charge */
 
     ENGINE_ERROR_CODE aiostat;
+    AIO_CALLBACK aiocb;
     bool ewouldblock;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
     /* ewouldblock=true is set when the command returns EWOULDBLOCK.
@@ -637,6 +638,7 @@ bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
+bool conn_waking(conn *c);
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
