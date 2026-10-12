@@ -433,6 +433,14 @@ extern "C" {
                                                const int nkey,
                                                item_attr *attrp,
                                                uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_struct_create_with_value)(ENGINE_HANDLE* handle,
+                                                          const void* cookie,
+                                                          const void* key,
+                                                          const int nkey,
+                                                          const void* value,
+                                                          const int nbytes,
+                                                          item_attr *attrp,
+                                                          uint16_t vbucket);
         ENGINE_ERROR_CODE (*map_elem_alloc)(ENGINE_HANDLE* handle,
                                             const void* cookie,
                                             const void* key,

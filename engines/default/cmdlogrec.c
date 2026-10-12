@@ -327,7 +327,7 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
         } else if (cm.ittype == ITEM_TYPE_SET) {
             ret = set_apply_item_link(engine, keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_MAP) {
-            ret = map_apply_item_link(engine, keyptr, cm.keylen, &attr);
+            ret = map_apply_item_link(engine, keyptr, cm.keylen, (keyptr + cm.keylen), cm.vallen, &attr);
         } else if (cm.ittype == ITEM_TYPE_BTREE) {
             struct lrec_coll_meta meta = body->ptr.meta;
             attr.maxbkeyrange.len = meta.maxbkrlen;
@@ -870,7 +870,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = map_apply_item_link(engine, keyptr, body->keylen, &attr);
+        ret = map_apply_item_link(engine, keyptr, body->keylen, "\r\n", 2, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
