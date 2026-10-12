@@ -24,6 +24,7 @@
  * Map Collection
  */
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
+                                    const void *value, const uint32_t nbytes,
                                     item_attr *attrp, const void *cookie);
 
 map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes);
@@ -65,7 +66,7 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
 ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint32_t nkey,
-                                      item_attr *attrp);
+                                      const void *value, const uint32_t nbytes, item_attr *attrp);
 ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
                                         const char *field, const uint32_t nfield,
                                         const uint32_t nbytes);

@@ -697,7 +697,23 @@ default_map_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_struct_create(key, nkey, attrp, cookie);
+    ret = map_struct_create(key, nkey, "\r\n", 2, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_map_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                     const void* key, const int nkey,
+                                     const void* value, const int nbytes,
+                                     item_attr *attrp, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_struct_create(key, nkey, value, nbytes, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
@@ -1961,6 +1977,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_get      = default_set_elem_get,
          /* MAP Collection API */
          .map_struct_create = default_map_struct_create,
+         .map_struct_create_with_value = default_map_struct_create_with_value,
          .map_elem_alloc    = default_map_elem_alloc,
          .map_elem_free     = default_map_elem_free,
          .map_elem_release  = default_map_elem_release,

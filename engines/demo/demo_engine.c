@@ -421,6 +421,15 @@ Demo_map_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
+Demo_map_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                  const void* key, const int nkey,
+                                  const void* value, const int nbytes,
+                                  item_attr *attrp, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+
+static ENGINE_ERROR_CODE
 Demo_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                        const void* key, const int nkey, const size_t nfield,
                        const size_t nbytes, eitem** eitem)
@@ -822,6 +831,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_get      = Demo_set_elem_get,
          /* MAP Collection API */
          .map_struct_create = Demo_map_struct_create,
+         .map_struct_create_with_value = Demo_map_struct_create_with_value,
          .map_elem_alloc    = Demo_map_elem_alloc,
          .map_elem_free     = Demo_map_elem_free,
          .map_elem_release  = Demo_map_elem_release,
