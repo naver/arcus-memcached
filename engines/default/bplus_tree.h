@@ -147,6 +147,12 @@ typedef struct _bplus_elem_posi {
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
+/* to_nbkey==BKEY_NULL means no "to" was given; fall back to from_bkey */
+#define BKRANGE_TO_BKEY(r) \
+        ((r)->to_nbkey != BKEY_NULL ? (r)->to_bkey : (r)->from_bkey)
+#define BKRANGE_TO_NBKEY(r) \
+        ((r)->to_nbkey != BKEY_NULL ? (r)->to_nbkey : (r)->from_nbkey)
+
 static inline bplus_elem_item *bplus_get_first_elem(bplus_indx_node *node)
 {
     while (node->ndepth > 0) {

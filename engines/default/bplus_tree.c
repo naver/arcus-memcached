@@ -1175,7 +1175,7 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
             } else {
                 elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
                 bkey = ops->get_bkey(elem, &nbkey);
-                if (BKEY_ISGT(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey))
+                if (BKEY_ISGT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
                     elem = NULL;
             }
             break;
@@ -1198,7 +1198,7 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
             } else {
                 elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
                 bkey = ops->get_bkey(elem, &nbkey);
-                if (BKEY_ISLT(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey))
+                if (BKEY_ISLT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
                     elem = NULL;
             }
             break;
@@ -1226,7 +1226,7 @@ bplus_elem_item *bplus_find_next(bplus_meta *bplus,
         uint32_t nbkey;
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
-        comp = BKEY_COMP(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
         if (comp == 0) {
             posi->bkeq = true;
         } else {
@@ -1258,7 +1258,7 @@ bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
         uint32_t nbkey;
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
-        comp = BKEY_COMP(bkey, nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
         if (comp == 0) {
             posi->bkeq = true;
         } else {
