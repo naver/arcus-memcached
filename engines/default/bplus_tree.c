@@ -87,6 +87,17 @@ static inline bool do_bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem
     }
 }
 
+static uint32_t do_bplus_elem_find_outside(const bplus_elem_posi *posi)
+{
+    if (posi->indx == 0 && posi->node->prev == NULL) {
+        return BPLUS_OUTSIDE_LEFT;
+    }
+    if (posi->indx >= posi->node->used_count && posi->node->next == NULL) {
+        return BPLUS_OUTSIDE_RIGHT;
+    }
+    return 0;
+}
+
 static bplus_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
 {
     size_t ntotal = (node_depth > 0 ? sizeof(bplus_indx_node) : sizeof(bplus_leaf_node));
@@ -1291,7 +1302,8 @@ bplus_elem_item *bplus_elem_replace(bplus_elem_posi *posi, bplus_elem_item *new_
 }
 
 bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
-                                   const int bkrtype, const bkey_range *bkrange,
+                                   const void *bkey, uint32_t nbkey,
+                                   const void *value, uint32_t nvalue,
                                    const eflag_filter *efilter,
                                    void *delete_arg,
                                    uint32_t *opcost, size_t *space_decreased)
@@ -1304,10 +1316,9 @@ bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
     if (root == NULL) return 0;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
-    elem = bplus_find_first(bplus, bkrtype, bkrange, path, true);
+    elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem == NULL) return NULL;
 
-    assert(path[0].bkeq == true);
     if (opcost) *opcost += 1;
     if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         do_bplus_elem_unlink(bplus, path, space_decreased);
@@ -1453,7 +1464,8 @@ uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const int bkrtype)
 }
 
 bool bplus_elem_get(bplus_meta *bplus,
-                    const int bkrtype, const bkey_range *bkrange,
+                    const void *bkey, uint32_t nbkey,
+                    const void *value, uint32_t nvalue,
                     const eflag_filter *efilter,
                     const bool delete, void *delete_arg,
                     bplus_elem_item **elem_array,
@@ -1465,9 +1477,9 @@ bool bplus_elem_get(bplus_meta *bplus,
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
-    elem = bplus_find_first(bplus, bkrtype, bkrange, path, delete);
+    elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem == NULL) {
-        if (outside) *outside = bplus_posi_outside(&path[0], BKEY_RANGE_TYPE_SIN);
+        if (outside) *outside = do_bplus_elem_find_outside(&path[0]);
         return false;
     }
 
@@ -1606,7 +1618,8 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
 }
 
 int bplus_posi_find(bplus_meta *bplus,
-                    const int bkrtype, const bkey_range *bkrange,
+                    const void *bkey, uint32_t nbkey,
+                    const void *value, uint32_t nvalue,
                     ENGINE_BTREE_ORDER order)
 {
     bplus_elem_posi  path[BPLUS_MAX_DEPTH];
@@ -1615,9 +1628,8 @@ int bplus_posi_find(bplus_meta *bplus,
 
     if (bplus->root == NULL) return -1; /* not found */
 
-    elem = bplus_find_first(bplus, bkrtype, bkrange, path, true);
+    elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem != NULL) {
-        assert(path[0].bkeq == true);
         bpos = do_bplus_posi_from_path(bplus, path, order);
         assert(bpos >= 0);
     } else {
@@ -1627,7 +1639,8 @@ int bplus_posi_find(bplus_meta *bplus,
 }
 
 int bplus_posi_find_with_get(bplus_meta *bplus,
-                             const int bkrtype, const bkey_range *bkrange,
+                             const void *bkey, uint32_t nbkey,
+                             const void *value, uint32_t nvalue,
                              ENGINE_BTREE_ORDER order, const int count,
                              bplus_elem_item **elem_array,
                              uint32_t *elem_count, uint32_t *elem_index)
@@ -1638,10 +1651,9 @@ int bplus_posi_find_with_get(bplus_meta *bplus,
 
     if (bplus->root == NULL) return -1; /* not found */
 
-    elem = bplus_find_first(bplus, bkrtype, bkrange, path, true);
+    elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem != NULL) {
         int ecnt, eidx;
-        assert(path[0].bkeq == true);
         bpos = do_bplus_posi_from_path(bplus, path, order);
         assert(bpos >= 0);
 

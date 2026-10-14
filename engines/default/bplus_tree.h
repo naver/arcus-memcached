@@ -185,7 +185,8 @@ ENGINE_ERROR_CODE bplus_elem_add(bplus_meta *bplus,
 bplus_elem_item *bplus_elem_replace(bplus_elem_posi *posi, bplus_elem_item *new_elem);
 
 bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
-                                   const int bkrtype, const bkey_range *bkrange,
+                                   const void *bkey, uint32_t nbkey,
+                                   const void *value, uint32_t nvalue,
                                    const eflag_filter *efilter,
                                    void *delete_arg,
                                    uint32_t *opcost, size_t *space_decreased);
@@ -200,7 +201,8 @@ bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreas
 
 uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const int bkrtype);
 bool bplus_elem_get(bplus_meta *bplus,
-                    const int bkrtype, const bkey_range *bkrange,
+                    const void *bkey, uint32_t nbkey,
+                    const void *value, uint32_t nvalue,
                     const eflag_filter *efilter,
                     const bool delete, void *delete_arg,
                     bplus_elem_item **elem_array,
@@ -214,10 +216,12 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
                              uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
 
 int bplus_posi_find(bplus_meta *bplus,
-                    const int bkrtype, const bkey_range *bkrange,
+                    const void *bkey, uint32_t nbkey,
+                    const void *value, uint32_t nvalue,
                     ENGINE_BTREE_ORDER order);
 int bplus_posi_find_with_get(bplus_meta *bplus,
-                             const int bkrtype, const bkey_range *bkrange,
+                             const void *bkey, uint32_t nbkey,
+                             const void *value, uint32_t nvalue,
                              ENGINE_BTREE_ORDER order, const int count,
                              bplus_elem_item **elem_array,
                              uint32_t *elem_count, uint32_t *elem_index);
