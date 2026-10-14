@@ -229,9 +229,12 @@ static int do_node_free_list_prepare(struct cluster_config *config, uint32_t cou
     struct node_item *item;
     int rc = 0;
 
-    if ((config->free_size + config->num_nodes) < count) {
+    /* All nodes in the new list can be new ones,
+     * while the existing nodes are still referenced by the current nodearray.
+     */
+    if (config->free_size < count) {
         /* We need to grow the free node list */
-        int addition = count - (config->free_size + config->num_nodes);
+        int addition = count - config->free_size;
         for (int i = 0; i < addition; i++) {
             item = (struct node_item *)malloc(sizeof(struct node_item));
             if (item == NULL) {
