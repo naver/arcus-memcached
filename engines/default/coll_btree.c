@@ -537,7 +537,8 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
-        btree_elem_item *deleted = (btree_elem_item *)bplus_elem_delete(bplus, bkrtype, bkrange, efilter,
+        btree_elem_item *deleted = (btree_elem_item *)bplus_elem_delete(bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                                                        NULL, 0, efilter,
                                                                         &delete_ctx, opcost, &space_decreased);
         if (deleted != NULL) {
             tot_found++;
@@ -786,7 +787,8 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
-        bool ret = bplus_elem_get(bplus, bkrtype, bkrange, efilter,
+        bool ret = bplus_elem_get(bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                  NULL, 0, efilter,
                                   delete, &delete_ctx,
                                   (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
         if (ret) {
@@ -1817,7 +1819,8 @@ ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bk
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *position = bplus_posi_find(&info->bplus, bkrtype, bkrange, order);
+            *position = bplus_posi_find(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                        NULL, 0, order);
             if (*position < 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
@@ -1856,7 +1859,8 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
             if ((eresult->elem_array = (eitem **)malloc((2*count+1)*sizeof(eitem*))) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
-            *position = bplus_posi_find_with_get(&info->bplus, bkrtype, bkrange, order, count,
+            *position = bplus_posi_find_with_get(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                                 NULL, 0, order, count,
                                                  (bplus_elem_item **)(eresult->elem_array),
                                                  &(eresult->elem_count),
                                                  &(eresult->opcost_or_eindex));
