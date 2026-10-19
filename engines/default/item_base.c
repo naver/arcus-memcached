@@ -1019,10 +1019,10 @@ ENGINE_ERROR_CODE do_item_link(hash_item *it)
 
     if (IS_MAP_ITEM(it) &&
         ((coll_meta_info *)item_get_meta(it))->mflags & COLL_META_FLAG_EVENT) {
-        event_data_t ev = { .type = EVENT_ITEM_LINK, .target = it, .ref_delta = 0 };
+        event_data_t ev = { .type = EVENT_ITEM_LINK, .target = it, .target_ref = 0 };
         engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
         /* Allow refcount adjustment to manage item's lifecycle. */
-        it->refcount += ev.ref_delta;
+        it->refcount += ev.target_ref;
     }
 
     /* update item statistics */
@@ -1043,10 +1043,10 @@ void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         CLOG_ITEM_UNLINK(it, cause);
 
         if (IS_MAP_ITEM(it) && ((coll_meta_info *)item_get_meta(it))->mflags & COLL_META_FLAG_EVENT) {
-            event_data_t ev = { .type = EVENT_ITEM_UNLINK, .target = it, .ref_delta = 0 };
+            event_data_t ev = { .type = EVENT_ITEM_UNLINK, .target = it, .target_ref = 0 };
             engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
             /* Allow refcount adjustment to manage item's lifecycle. */
-            it->refcount -= ev.ref_delta;
+            it->refcount -= ev.target_ref;
         }
 
         /* unlink the item from LRU list */
