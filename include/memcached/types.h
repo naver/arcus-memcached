@@ -437,7 +437,8 @@ extern "C" {
         void *coll_item;
         void *target; // item or element
         void *source; // item or element
-        uint16_t ref_delta; // refcount change of target/source
+        uint16_t target_ref; // refcount change of target
+        uint16_t source_ref; // refcount change of source
     } event_data_t;
 
     /* Forward declaration of the server handle -- to be filled in later */

@@ -176,10 +176,10 @@ static void do_map_elem_delete_post(map_meta_info *info,
     if (info->mflags & COLL_META_FLAG_EVENT) {
         event_data_t ev = { .type = EVENT_ELEM_DELETE,
                             .coll_item = COLL_GET_HASH_ITEM(info),
-                            .target = elem, .ref_delta = 0 };
+                            .target = elem, .target_ref = 0 };
         engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
         /* Allow refcount adjustment to manage elem's lifecycle. */
-        elem->refcount -= ev.ref_delta;
+        elem->refcount -= ev.target_ref;
     }
 
     info->ccnt--;
@@ -260,11 +260,11 @@ static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, htree_prev_inf
         event_data_t ev = { .type = EVENT_ELEM_REPLACE,
                             .coll_item = COLL_GET_HASH_ITEM(info),
                             .target = new_elem, .source = old_elem,
-                            .ref_delta = 0 };
+                            .target_ref = 0, .source_ref = 0 };
         engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
         /* Allow refcount adjustment to manage elem's lifecycle. */
-        new_elem->refcount += ev.ref_delta;
-        old_elem->refcount -= ev.ref_delta;
+        new_elem->refcount += ev.target_ref;
+        old_elem->refcount -= ev.source_ref;
     }
 
     size_t old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
@@ -417,10 +417,10 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     if (info->mflags & COLL_META_FLAG_EVENT) {
         event_data_t ev = { .type = EVENT_ELEM_INSERT,
                             .coll_item = COLL_GET_HASH_ITEM(info),
-                            .target = elem, .ref_delta = 0 };
+                            .target = elem, .target_ref = 0 };
         engine->server.callback->perform_callbacks(ON_EVENT_ITEM, (const void *)&ev, NULL);
         /* Allow refcount adjustment to manage elem's lifecycle. */
-        elem->refcount += ev.ref_delta;
+        elem->refcount += ev.target_ref;
     }
 
     info->ccnt++;
