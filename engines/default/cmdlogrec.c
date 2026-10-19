@@ -258,6 +258,7 @@ static inline void do_construct_item_attr(char *ptr, item_attr *attr)
     attr->ovflaction = info.ovflaction;
     attr->readable   = (info.mflags & COLL_META_FLAG_READABLE ? 1 : 0);
     attr->trimmed    = 0;
+    attr->event      = (info.mflags & COLL_META_FLAG_EVENT ? 1 : 0);
 }
 
 static inline void do_construct_lrec_attr(hash_item *it, lrec_attr_info *attr)
@@ -322,6 +323,7 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
         attr.ovflaction = meta.ovflact;
         attr.readable   = (meta.mflags & COLL_META_FLAG_READABLE ? 1 : 0);
         attr.trimmed    = (meta.mflags & COLL_META_FLAG_TRIMMED ? 1 : 0);
+        attr.event      = (meta.mflags & COLL_META_FLAG_EVENT ? 1 : 0);
         if (cm.ittype == ITEM_TYPE_LIST) {
             ret = list_apply_item_link(engine, keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_SET) {
