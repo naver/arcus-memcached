@@ -16363,6 +16363,10 @@ int main (int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    /* Initialize before init_engine because persistence recovery may trigger
+     * event processing that uses the engine API */
+    mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
+
     if (!init_engine(engine_handle, settings.engine_config, mc_logger)) {
         exit(EXIT_FAILURE);
     }
@@ -16370,7 +16374,6 @@ int main (int argc, char **argv)
     if (settings.verbose > 0) {
         log_engine_details(engine_handle, mc_logger);
     }
-    mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
 
     /* reload the configs set by engine internal */
     settings_reload_engine_config();
