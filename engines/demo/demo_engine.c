@@ -290,6 +290,15 @@ Demo_list_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
+Demo_list_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                   const void* key, const int nkey,
+                                   const void* value, const int nbytes,
+                                   item_attr *attrp, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+
+static ENGINE_ERROR_CODE
 Demo_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                         const void* key, const int nkey,
                         const size_t nbytes, eitem** eitem)
@@ -346,6 +355,15 @@ static ENGINE_ERROR_CODE
 Demo_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
                           const void* key, const int nkey, item_attr *attrp,
                           uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+
+static ENGINE_ERROR_CODE
+Demo_set_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                  const void* key, const int nkey,
+                                  const void* value, const int nbytes,
+                                  item_attr *attrp, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
 }
@@ -494,6 +512,15 @@ static ENGINE_ERROR_CODE
 Demo_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
                             const void* key, const int nkey, item_attr *attrp,
                             uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+
+static ENGINE_ERROR_CODE
+Demo_btree_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                    const void* key, const int nkey,
+                                    const void* value, const int nbytes,
+                                    item_attr *attrp, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
 }
@@ -814,6 +841,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .flush             = Demo_flush,
          /* LIST Collection API */
          .list_struct_create = Demo_list_struct_create,
+         .list_struct_create_with_value = Demo_list_struct_create_with_value,
          .list_elem_alloc   = Demo_list_elem_alloc,
          .list_elem_free    = Demo_list_elem_free,
          .list_elem_release = Demo_list_elem_release,
@@ -822,6 +850,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .list_elem_get     = Demo_list_elem_get,
          /* SET Colleciton API */
          .set_struct_create = Demo_set_struct_create,
+         .set_struct_create_with_value = Demo_set_struct_create_with_value,
          .set_elem_alloc    = Demo_set_elem_alloc,
          .set_elem_free     = Demo_set_elem_free,
          .set_elem_release  = Demo_set_elem_release,
@@ -841,6 +870,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .map_elem_get      = Demo_map_elem_get,
          /* B+Tree Collection API */
          .btree_struct_create = Demo_btree_struct_create,
+         .btree_struct_create_with_value = Demo_btree_struct_create_with_value,
          .btree_elem_alloc   = Demo_btree_elem_alloc,
          .btree_elem_free    = Demo_btree_elem_free,
          .btree_elem_release = Demo_btree_elem_release,

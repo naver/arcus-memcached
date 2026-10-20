@@ -24,6 +24,7 @@
  * List Collection
  */
 ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
+                                     const void *value, const uint32_t nbytes,
                                      item_attr *attrp, const void *cookie);
 
 list_elem_item *list_elem_alloc(const uint32_t nbytes);
@@ -61,7 +62,7 @@ ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
 ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
-                                       item_attr *attrp);
+                                       const void *value, const uint32_t nbytes, item_attr *attrp);
 ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
                                          const int nelems, const int index,
                                          const char *value, const uint32_t nbytes);

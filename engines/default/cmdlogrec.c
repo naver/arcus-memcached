@@ -325,9 +325,9 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
         attr.trimmed    = (meta.mflags & COLL_META_FLAG_TRIMMED ? 1 : 0);
         attr.event      = (meta.mflags & COLL_META_FLAG_EVENT ? 1 : 0);
         if (cm.ittype == ITEM_TYPE_LIST) {
-            ret = list_apply_item_link(engine, keyptr, cm.keylen, &attr);
+            ret = list_apply_item_link(engine, keyptr, cm.keylen, (keyptr + cm.keylen), cm.vallen, &attr);
         } else if (cm.ittype == ITEM_TYPE_SET) {
-            ret = set_apply_item_link(engine, keyptr, cm.keylen, &attr);
+            ret = set_apply_item_link(engine, keyptr, cm.keylen, (keyptr + cm.keylen), cm.vallen, &attr);
         } else if (cm.ittype == ITEM_TYPE_MAP) {
             ret = map_apply_item_link(engine, keyptr, cm.keylen, (keyptr + cm.keylen), cm.vallen, &attr);
         } else if (cm.ittype == ITEM_TYPE_BTREE) {
@@ -338,7 +338,7 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
                 memcpy(attr.maxbkeyrange.val, maxbkrptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
                 keyptr += BTREE_REAL_NBKEY(attr.maxbkeyrange.len);
             }
-            ret = btree_apply_item_link(engine, keyptr, cm.keylen, &attr);
+            ret = btree_apply_item_link(engine, keyptr, cm.keylen, (keyptr + cm.keylen), cm.vallen, &attr);
         }
     }
 
@@ -602,7 +602,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = list_apply_item_link(engine, keyptr, body->keylen, &attr);
+        ret = list_apply_item_link(engine, keyptr, body->keylen, "\r\n", 2, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -736,7 +736,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = set_apply_item_link(engine, keyptr, body->keylen, &attr);
+        ret = set_apply_item_link(engine, keyptr, body->keylen, "\r\n", 2, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -1012,7 +1012,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
             return ENGINE_SUCCESS;
         }
         attr.maxbkeyrange.len = BKEY_NULL;
-        ret = btree_apply_item_link(engine, keyptr, body->keylen, &attr);
+        ret = btree_apply_item_link(engine, keyptr, body->keylen, "\r\n", 2, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
