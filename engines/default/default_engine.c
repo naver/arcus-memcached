@@ -465,7 +465,23 @@ default_list_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = list_struct_create(key, nkey, attrp, cookie);
+    ret = list_struct_create(key, nkey, "\r\n", 2, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_list_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                      const void* key, const int nkey,
+                                      const void* value, const int nbytes,
+                                      item_attr *attrp, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = list_struct_create(key, nkey, value, nbytes, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
@@ -573,7 +589,23 @@ default_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_struct_create(key, nkey, attrp, cookie);
+    ret = set_struct_create(key, nkey, "\r\n", 2, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_set_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                     const void* key, const int nkey,
+                                     const void* value, const int nbytes,
+                                     item_attr *attrp, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = set_struct_create(key, nkey, value, nbytes, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
@@ -837,7 +869,23 @@ default_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_struct_create(key, nkey, attrp, cookie);
+    ret = btree_struct_create(key, nkey, "\r\n", 2, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_btree_struct_create_with_value(ENGINE_HANDLE* handle, const void* cookie,
+                                       const void* key, const int nkey,
+                                       const void* value, const int nbytes,
+                                       item_attr *attrp, uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = btree_struct_create(key, nkey, value, nbytes, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
@@ -1960,6 +2008,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .flush             = default_flush,
          /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
+         .list_struct_create_with_value = default_list_struct_create_with_value,
          .list_elem_alloc   = default_list_elem_alloc,
          .list_elem_free    = default_list_elem_free,
          .list_elem_release = default_list_elem_release,
@@ -1968,6 +2017,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .list_elem_get     = default_list_elem_get,
          /* SET Colleciton API */
          .set_struct_create = default_set_struct_create,
+         .set_struct_create_with_value = default_set_struct_create_with_value,
          .set_elem_alloc    = default_set_elem_alloc,
          .set_elem_free     = default_set_elem_free,
          .set_elem_release  = default_set_elem_release,
@@ -1987,6 +2037,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .map_elem_get      = default_map_elem_get,
          /* B+Tree Collection API */
          .btree_struct_create = default_btree_struct_create,
+         .btree_struct_create_with_value = default_btree_struct_create_with_value,
          .btree_elem_alloc   = default_btree_elem_alloc,
          .btree_elem_free    = default_btree_elem_free,
          .btree_elem_release = default_btree_elem_release,

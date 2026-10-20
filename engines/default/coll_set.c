@@ -100,9 +100,9 @@ static int32_t do_set_real_maxcount(int32_t maxcount)
 }
 
 static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
+                                    const void *value, const uint32_t nbytes,
                                     item_attr *attrp)
 {
-    uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(set_meta_info) - nkey;
 
@@ -111,7 +111,7 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_SET;
         it->nbytes = nbytes; /* NOT real_nbytes */
-        memcpy(item_get_data(it), "\r\n", nbytes);
+        memcpy(item_get_data(it), value, nbytes);
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
@@ -275,6 +275,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem)
  * SET Interface Functions
  */
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
+                                    const void *value, const uint32_t nbytes,
                                     item_attr *attrp, const void *cookie)
 {
     hash_item *it;
@@ -287,7 +288,7 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_set_item_alloc(key, nkey, attrp);
+        it = do_set_item_alloc(key, nkey, value, nbytes, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -345,7 +346,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_set_item_alloc(key, nkey, attrp);
+        it = do_set_item_alloc(key, nkey, "\r\n", 2, attrp);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -584,7 +585,7 @@ ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
 }
 
 ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint32_t nkey,
-                                      item_attr *attrp)
+                                      const void *value, const uint32_t nbytes, item_attr *attrp)
 {
     hash_item *old_it;
     hash_item *new_it;
@@ -600,7 +601,7 @@ ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint3
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
-    new_it = do_set_item_alloc(key, nkey, attrp);
+    new_it = do_set_item_alloc(key, nkey, value, nbytes, attrp);
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
