@@ -353,12 +353,12 @@ static void do_btree_elem_replace(btree_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
-                                              const int bkrtype, const bkey_range *bkrange,
+                                              const void *bkey, const uint32_t nbkey,
                                               const eflag_update *eupdate,
                                               const char *value, const uint32_t nbytes)
 {
     bplus_meta *bplus = &info->bplus;
-    bplus_elem_posi  posi;
+    bplus_elem_posi path[BPLUS_MAX_DEPTH];
     btree_elem_item *elem;
     unsigned char *ptr;
     uint32_t real_nbkey;
@@ -369,12 +369,10 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
         return ENGINE_ELEM_ENOENT;
     }
 
-    elem = (btree_elem_item *)bplus_find_first(bplus, bkrtype, bkrange, &posi, false);
+    elem = (btree_elem_item *)bplus_elem_find(bplus, bkey, nbkey, NULL, 0, path);
     if (elem == NULL) {
         return ENGINE_ELEM_ENOENT;
     }
-
-    assert(posi.bkeq == true);
 
     /* check eflag update validation check */
     if (eupdate != NULL && eupdate->neflag > 0 && eupdate->bitwop < BITWISE_OP_MAX) {
@@ -447,7 +445,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
             memcpy(ptr, elem->data + real_nbkey + elem->neflag, elem->nbytes);
         }
 
-        do_btree_elem_replace(info, &posi, new_elem);
+        do_btree_elem_replace(info, &path[0], new_elem);
     }
 
     return ENGINE_SUCCESS;
@@ -1610,7 +1608,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            ret = do_btree_elem_update(info, bkrtype, bkrange, eupdate, value, nbytes);
+            ret = do_btree_elem_update(info, bkrange->from_bkey, bkrange->from_nbkey, eupdate, value, nbytes);
         } while(0);
         do_item_release(it);
     }
@@ -1997,24 +1995,14 @@ uint32_t btree_elem_delete_with_count(btree_meta_info *info, const uint32_t coun
 
 /* Scan the whole btree with the cache lock acquired.
  * We only build the table of the current elements.
- * See do_btree_elem_delete and do_btree_multi_elem_unlink.
- * They show how to traverse the btree.
- * FIXME. IS THIS STILL RIGHT AFTER THE MERGE? do_btree_multi_elem_unlink is gone.
  */
 void btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult)
 {
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    btree_elem_item *elem;
-    bplus_meta *bplus = &info->bplus;
-    bplus_elem_posi  posi;
+    bplus_elem_posi posi;
 
-    elem = (btree_elem_item *)bplus_find_first(bplus, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
-    while (elem != NULL) {
-        elem->refcount++;
-        eresult->elem_array[eresult->elem_count++] = elem;
-        /* Never have to go backward?  FIXME */
-        elem = (btree_elem_item *)bplus_find_next(bplus, &posi, NULL);
-    }
+    bplus_traverse_init(&info->bplus, &posi);
+    eresult->elem_count = bplus_traverse_next(&posi, eresult->elem_array, info->ccnt);
     assert(eresult->elem_count == info->ccnt);
 }
 
