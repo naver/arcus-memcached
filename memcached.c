@@ -9882,7 +9882,8 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         return;
     }
 #ifdef SASL_ENABLED
-    if (settings.require_sasl && !check_ascii_auth(c, cmd->get_auth_flag(), NULL, tokens, ntokens)) {
+    /* include the terminal token removed above */
+    if (settings.require_sasl && !check_ascii_auth(c, cmd->get_auth_flag(), NULL, tokens, ntokens + 1)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
