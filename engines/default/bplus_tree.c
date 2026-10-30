@@ -1088,7 +1088,7 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
             path[0].node = do_bplus_get_last_leaf(root, (path_flag ? path : NULL));
             path[0].indx = path[0].node->used_count - 1;
         }
-        path[0].bkeq = false;
+        path[0].done = false;
 
         elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
         assert(elem != NULL);
@@ -1103,7 +1103,7 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
         /* while traversing to leaf node, the bkey can be found.
          * refer to do_bplus_find_leaf() function.
          */
-        path[0].bkeq = true;
+        path[0].done = true;
         path[0].node = node;
         path[0].indx = 0;
         return elem;
@@ -1124,12 +1124,12 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
     }
 
     if (left <= right) { /* the bkey(from_bkey) is found. */
-        path[0].bkeq = true;
+        path[0].done = !bplus->duplicate_bkeys;
         path[0].node = node;
         path[0].indx = mid;
         /* elem != NULL */
     } else {             /* the bkey(from_bkey) is not found */
-        path[0].bkeq = false;
+        path[0].done = false;
         if (forward) { /* ascending bkey range (or a single bkey, narrowed to leftmost) */
             /* find the next element */
             if (left < node->used_count) {
@@ -1186,7 +1186,7 @@ bplus_elem_item *bplus_find_next(bplus_meta *bplus,
 
     do_bplus_incr_posi(posi);
     if (posi->node == NULL) {
-        posi->bkeq = false;
+        posi->done = false;
         return NULL;
     }
 
@@ -1197,14 +1197,14 @@ bplus_elem_item *bplus_find_next(bplus_meta *bplus,
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
-        if (comp == 0) {
-            posi->bkeq = true;
+        if (comp == 0 && !bplus->duplicate_bkeys) {
+            posi->done = true;
         } else {
-            posi->bkeq = false;
+            posi->done = false;
             if (comp > 0) elem = NULL;
         }
     } else {
-        posi->bkeq = false;
+        posi->done = false;
     }
     return elem;
 }
@@ -1218,7 +1218,7 @@ bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
 
     do_bplus_decr_posi(posi);
     if (posi->node == NULL) {
-        posi->bkeq = false;
+        posi->done = false;
         return NULL;
     }
 
@@ -1229,14 +1229,14 @@ bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
-        if (comp == 0) {
-            posi->bkeq = true;
+        if (comp == 0 && !bplus->duplicate_bkeys) {
+            posi->done = true;
         } else {
-            posi->bkeq = false;
+            posi->done = false;
             if (comp < 0) elem = NULL;
         }
     } else {
-        posi->bkeq = false;
+        posi->done = false;
     }
     return elem;
 }
@@ -1327,8 +1327,8 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
     for (i = 1; i <= root->ndepth; i++) {
         upth[i] = path[i];
     }
-    /* clear the bkeq flag of current posi */
-    c_posi.bkeq = false;
+    /* clear the done flag of current posi */
+    c_posi.done = false;
 
     do {
         if (opcost) *opcost += 1;
@@ -1346,7 +1346,7 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
         }
 
         /* get the next element */
-        if (c_posi.bkeq == true && !bplus->duplicate_bkeys) {
+        if (c_posi.done == true) {
             elem = NULL; /* reached to the end of bkey range */
         } else {
             elem = (forward ? bplus_find_next(bplus, &c_posi, bkrange)
@@ -1496,7 +1496,7 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
     bplus_elem_posi s_posi = c_posi; /* save the current posi */
     if (outside) *outside = 0;
 
-    if (c_posi.bkeq == false) {
+    if (c_posi.done == false) {
         if (outside) *outside |= bplus_posi_outside(&c_posi, forward);
     }
 
@@ -1508,8 +1508,8 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
             upth[i] = path[i];
         }
     }
-    /* clear the bkeq flag of current posi */
-    c_posi.bkeq = false;
+    /* clear the done flag of current posi */
+    c_posi.done = false;
 
     do {
         if (opcost) *opcost += 1;
@@ -1530,7 +1530,7 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
         }
 
         /* get the next element */
-        if (c_posi.bkeq == true && !bplus->duplicate_bkeys) {
+        if (c_posi.done == true) {
             elem = NULL; /* reached to the end of bkey range */
         } else {
             elem = (forward ? bplus_find_next(bplus, &c_posi, bkrange)
@@ -1671,7 +1671,7 @@ ENGINE_ERROR_CODE bplus_elem_get_by_posi(bplus_meta *bplus,
     assert(node->ndepth == 0);
     posi.node = node;
     posi.indx = index-tot_ecnt;
-    posi.bkeq = false;
+    posi.done = false;
 
     elem = BPLUS_GET_ELEM_ITEM(posi.node, posi.indx);
     elem->refcount++;
@@ -1709,7 +1709,7 @@ bplus_elem_item *bplus_scan_next(bplus_meta *bplus,
 {
     bplus_elem_item *elem;
     do {
-        if (posi->bkeq == true) {
+        if (posi->done == true) {
             return NULL;
         }
         if (forward) {
@@ -1770,13 +1770,13 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
     bool forward = (bkrtype != BKEY_RANGE_TYPE_DSC);
     elem = bplus_find_first(bplus, forward, bkrange, &posi, false);
     if (elem != NULL) {
-        posi.bkeq = false;
+        posi.done = false;
         do {
             tot_access++;
             if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter))
                 tot_found++;
 
-            if (posi.bkeq == true && !bplus->duplicate_bkeys) {
+            if (posi.done == true) {
                 elem = NULL; break;
             }
             elem = (forward ? bplus_find_next(bplus, &posi, bkrange)

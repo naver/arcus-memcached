@@ -76,11 +76,8 @@ typedef struct _bplus_meta {
 typedef struct _bplus_elem_posi {
     bplus_indx_node *node;
     uint16_t         indx;
-    /* It is used temporarily in order to check
-     * if the found bkey is equal to from_bkey or to_bkey of given bkey range
-     * in the bplus_find_first/next/prev functions.
-     */
-    bool             bkeq;
+    /* true => no need to scan further; always false if duplicate_bkeys */
+    bool             done;
 } bplus_elem_posi;
 
 /* bkey type */

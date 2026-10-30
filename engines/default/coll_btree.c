@@ -1206,7 +1206,7 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
             do_item_release(it); continue;
         }
 
-        if (posi.bkeq == false) {
+        if (posi.done == false) {
             if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
                 outside = bplus_posi_outside(&posi, ascending);
                 if (do_btree_overlapped_with_trimmed_space(info, outside)) {
@@ -1218,7 +1218,7 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
         }
 
         /* initialize for the next scan */
-        posi.bkeq = false;
+        posi.done = false;
 
 scan_next:
         if (satisfied != true) {
