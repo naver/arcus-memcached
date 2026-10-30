@@ -364,6 +364,7 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
     tls_waiter = NULL; /* clear tls_waiter */
 
     if (*result == ENGINE_SUCCESS && config->async_logging == false &&
+        waiter->cookie != NULL &&
         engine->server.core->get_noreply(waiter->cookie) == false) {
         group_commit_t *gcommit = &logmgr_gl.group_commit;
         LogSN now_fsync_lsn;
