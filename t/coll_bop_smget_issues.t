@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 133;
+use Test::More tests => 143;
 use Test::More;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
@@ -429,6 +429,32 @@ mem_cmd_is($sock, $cmd . " unique", $val, $rst);
 # delete keys
 mem_cmd_is($sock, "delete key0", "", "DELETED");
 mem_cmd_is($sock, "delete key1", "", "DELETED");
+
+#
+# 3rd SMGet Test
+#
+
+# create keys
+mem_cmd_is($sock, "bop create bkeysin 11 0 5 largest_trim", "", "CREATED");
+for ($num = 10; $num <= 50; $num += 10) {
+    $cmd = "bop insert bkeysin $num 0x01 5"; $val = "value"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
+}
+mem_cmd_is($sock, "bop insert bkeysin 60 0x01 5", "value", "OUT_OF_RANGE");
+$cmd = "getattr bkeysin trimmed";
+$rst = "ATTR trimmed=1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
+
+# smget: SIN bkey, eflag filter mismatch on the trim boundary
+$cmd = "bop smget 7 1 50 0 EQ 0x02 10"; $val = "bkeysin";
+$rst = "ELEMENTS 0
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+mem_cmd_is($sock, "delete bkeysin", "", "DELETED");
 
 # after test
 release_memcached($engine, $server);
