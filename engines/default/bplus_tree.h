@@ -79,6 +79,7 @@ typedef struct _bplus_elem_posi {
     /* It is used temporarily in order to check
      * if the found bkey is equal to from_bkey or to_bkey of given bkey range
      * in the bplus_find_first/next/prev functions.
+     * Always false if duplicate_bkeys.
      */
     bool             bkeq;
 } bplus_elem_posi;
@@ -178,7 +179,7 @@ bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
                                  const void *value, uint32_t nvalue,
                                  bplus_elem_posi *path);
 bplus_elem_item *bplus_find_first(bplus_meta *bplus,
-                                  const int bkrtype, const bkey_range *bkrange,
+                                  const bool forward, const bkey_range *bkrange,
                                   bplus_elem_posi *path, const bool path_flag);
 bplus_elem_item *bplus_find_next(bplus_meta *bplus,
                                  bplus_elem_posi *posi, const bkey_range *bkrange);
@@ -197,7 +198,7 @@ bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
                                    void *delete_arg,
                                    uint32_t *opcost, size_t *space_decreased);
 uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
-                                const int bkrtype, const bkey_range *bkrange,
+                                const bool forward, const bkey_range *bkrange,
                                 const eflag_filter *efilter,
                                 const uint32_t offset, const uint32_t count,
                                 void *delete_arg,
@@ -205,7 +206,7 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
 bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decreased);
 bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreased);
 
-uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const int bkrtype);
+uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const bool forward);
 bool bplus_elem_get(bplus_meta *bplus,
                     const void *bkey, uint32_t nbkey,
                     const void *value, uint32_t nvalue,
@@ -214,7 +215,7 @@ bool bplus_elem_get(bplus_meta *bplus,
                     bplus_elem_item **elem_array,
                     uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
 uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
-                             const int bkrtype, const bkey_range *bkrange,
+                             const bool forward, const bkey_range *bkrange,
                              const eflag_filter *efilter,
                              const uint32_t offset, const uint32_t count,
                              const bool delete, void *delete_arg,
@@ -236,14 +237,14 @@ ENGINE_ERROR_CODE bplus_elem_get_by_posi(bplus_meta *bplus,
                                          bplus_elem_item **elem_array, uint32_t *elem_count);
 
 bplus_elem_item *bplus_scan_first(bplus_meta *bplus,
-                                  const int bkrtype,
+                                  const bool forward,
                                   const bkey_range *bkrange,
                                   const eflag_filter *efilter,
                                   bplus_elem_posi *posi,
                                   bool *satisfied);
 bplus_elem_item *bplus_scan_next(bplus_meta *bplus,
                                  bplus_elem_posi *posi,
-                                 const int bkrtype,
+                                 const bool forward,
                                  const bkey_range *bkrange,
                                  const eflag_filter *efilter);
 
