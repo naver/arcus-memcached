@@ -1215,10 +1215,10 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
                     do_item_release(it); continue;
                 }
             }
+        } else if (bkrtype != BKEY_RANGE_TYPE_SIN) {
+            /* initialize for the next scan */
+            posi.bkeq = false;
         }
-
-        /* initialize for the next scan */
-        posi.bkeq = false;
 
 scan_next:
         if (satisfied != true) {
