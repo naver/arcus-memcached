@@ -1068,9 +1068,9 @@ bplus_elem_item *bplus_elem_find(bplus_meta *bplus,
     }
 }
 
-bplus_elem_item *bplus_find_first(bplus_meta *bplus,
-                                  const bool forward, const bkey_range *bkrange,
-                                  bplus_elem_posi *path, const bool path_flag)
+static bplus_elem_item *do_bplus_find_first(bplus_meta *bplus,
+                                            const bool forward, const bkey_range *bkrange,
+                                            bplus_elem_posi *path, const bool path_flag)
 {
     bplus_indx_node *root = bplus->root;
     bplus_ops       *ops = bplus->ops;
@@ -1186,9 +1186,9 @@ bplus_elem_item *bplus_find_first(bplus_meta *bplus,
     return elem;
 }
 
-bplus_elem_item *bplus_find_next(bplus_meta *bplus,
-                                 bplus_elem_posi *posi,
-                                 const bkey_range *bkrange)
+static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
+                                           bplus_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
@@ -1218,9 +1218,9 @@ bplus_elem_item *bplus_find_next(bplus_meta *bplus,
     return elem;
 }
 
-bplus_elem_item *bplus_find_prev(bplus_meta *bplus,
-                                 bplus_elem_posi *posi,
-                                 const bkey_range *bkrange)
+static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
+                                           bplus_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
@@ -1324,7 +1324,7 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
     uint32_t skip_cnt = 0;
     int i;
 
-    elem = bplus_find_first(bplus, forward, bkrange, path, true);
+    elem = do_bplus_find_first(bplus, forward, bkrange, path, true);
     if (elem == NULL) return 0;
 
     bplus_elem_posi c_posi = path[0];
@@ -1358,8 +1358,8 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
         if (c_posi.bkeq == true) {
             elem = NULL; /* reached to the end of bkey range */
         } else {
-            elem = (forward ? bplus_find_next(bplus, &c_posi, bkrange)
-                            : bplus_find_prev(bplus, &c_posi, bkrange));
+            elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
+                            : do_bplus_find_prev(bplus, &c_posi, bkrange));
         }
         if (elem == NULL) break;
 
@@ -1495,7 +1495,7 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
     int i;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
-    elem = bplus_find_first(bplus, forward, bkrange, path, delete);
+    elem = do_bplus_find_first(bplus, forward, bkrange, path, delete);
     if (elem == NULL) {
         if (outside) *outside = bplus_posi_outside(&path[0], forward);
         return 0;
@@ -1542,8 +1542,8 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
         if (c_posi.bkeq == true) {
             elem = NULL; /* reached to the end of bkey range */
         } else {
-            elem = (forward ? bplus_find_next(bplus, &c_posi, bkrange)
-                            : bplus_find_prev(bplus, &c_posi, bkrange));
+            elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
+                            : do_bplus_find_prev(bplus, &c_posi, bkrange));
         }
         if (elem == NULL) break;
 
@@ -1703,7 +1703,7 @@ bplus_elem_item *bplus_scan_first(bplus_meta *bplus,
                                   bplus_elem_posi *posi,
                                   bool *satisfied)
 {
-    bplus_elem_item *elem = bplus_find_first(bplus, forward, bkrange, posi, false);
+    bplus_elem_item *elem = do_bplus_find_first(bplus, forward, bkrange, posi, false);
     if (elem) {
         *satisfied = (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter));
     }
@@ -1722,9 +1722,9 @@ bplus_elem_item *bplus_scan_next(bplus_meta *bplus,
             return NULL;
         }
         if (forward) {
-            elem = bplus_find_next(bplus, posi, bkrange);
+            elem = do_bplus_find_next(bplus, posi, bkrange);
         } else {
-            elem = bplus_find_prev(bplus, posi, bkrange);
+            elem = do_bplus_find_prev(bplus, posi, bkrange);
         }
         if (elem == NULL) {
             return NULL;
@@ -1777,7 +1777,7 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
 #endif
 
     bool forward = (bkrtype != BKEY_RANGE_TYPE_DSC);
-    elem = bplus_find_first(bplus, forward, bkrange, &posi, false);
+    elem = do_bplus_find_first(bplus, forward, bkrange, &posi, false);
     if (elem != NULL) {
         posi.bkeq = false;
         do {
@@ -1788,8 +1788,8 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
             if (posi.bkeq == true) {
                 elem = NULL; break;
             }
-            elem = (forward ? bplus_find_next(bplus, &posi, bkrange)
-                            : bplus_find_prev(bplus, &posi, bkrange));
+            elem = (forward ? do_bplus_find_next(bplus, &posi, bkrange)
+                            : do_bplus_find_prev(bplus, &posi, bkrange));
         } while (elem != NULL);
     }
     if (opcost)
