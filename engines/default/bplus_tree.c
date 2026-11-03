@@ -1190,7 +1190,6 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
                                            bplus_elem_posi *posi,
                                            const bkey_range *bkrange)
 {
-    bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
 
     posi->bkeq = false;
@@ -1204,7 +1203,7 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
         const void *bkey;
         uint32_t nbkey;
         int comp;
-        bkey = ops->get_bkey(elem, &nbkey);
+        bkey = bplus->ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey,
                          BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
         if (comp == 0) {
@@ -1220,7 +1219,6 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
                                            bplus_elem_posi *posi,
                                            const bkey_range *bkrange)
 {
-    bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
 
     posi->bkeq = false;
@@ -1234,7 +1232,7 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
         const void *bkey;
         uint32_t nbkey;
         int comp;
-        bkey = ops->get_bkey(elem, &nbkey);
+        bkey = bplus->ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey,
                          BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
         if (comp == 0) {
@@ -1736,7 +1734,6 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
 {
     bplus_elem_posi  posi;
     bplus_elem_item *elem;
-    bplus_ops       *ops = bplus->ops;
     uint32_t tot_found = 0; /* total found count */
     uint32_t tot_access = 0; /* total access count */
 
@@ -1755,8 +1752,8 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
         bplus_elem_item *max_bkey_elem = bplus_get_last_elem(bplus->root);
 
         uint32_t min_nbkey, max_nbkey;
-        const void *min_bkey = ops->get_bkey(min_bkey_elem, &min_nbkey);
-        const void *max_bkey = ops->get_bkey(max_bkey_elem, &max_nbkey);
+        const void *min_bkey = bplus->ops->get_bkey(min_bkey_elem, &min_nbkey);
+        const void *max_bkey = bplus->ops->get_bkey(max_bkey_elem, &max_nbkey);
 
         int min_comp, max_comp;
         if (bkrtype == BKEY_RANGE_TYPE_ASC) {
