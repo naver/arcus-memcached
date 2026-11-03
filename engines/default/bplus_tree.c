@@ -1193,9 +1193,9 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
     bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
 
+    posi->bkeq = false;
     do_bplus_incr_posi(posi);
     if (posi->node == NULL) {
-        posi->bkeq = false;
         return NULL;
     }
 
@@ -1205,15 +1205,13 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
         uint32_t nbkey;
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
-        comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
-        if (comp == 0 && !bplus->duplicate_bkeys) {
-            posi->bkeq = true;
-        } else {
-            posi->bkeq = false;
-            if (comp > 0) elem = NULL;
+        comp = BKEY_COMP(bkey, nbkey,
+                         BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
+        if (comp == 0) {
+            if (!bplus->duplicate_bkeys) posi->bkeq = true;
+        } else if (comp > 0) {
+            elem = NULL;
         }
-    } else {
-        posi->bkeq = false;
     }
     return elem;
 }
@@ -1225,9 +1223,9 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
     bplus_ops *ops = bplus->ops;
     bplus_elem_item *elem;
 
+    posi->bkeq = false;
     do_bplus_decr_posi(posi);
     if (posi->node == NULL) {
-        posi->bkeq = false;
         return NULL;
     }
 
@@ -1237,15 +1235,13 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
         uint32_t nbkey;
         int comp;
         bkey = ops->get_bkey(elem, &nbkey);
-        comp = BKEY_COMP(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
-        if (comp == 0 && !bplus->duplicate_bkeys) {
-            posi->bkeq = true;
-        } else {
-            posi->bkeq = false;
-            if (comp < 0) elem = NULL;
+        comp = BKEY_COMP(bkey, nbkey,
+                         BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
+        if (comp == 0) {
+            if (!bplus->duplicate_bkeys) posi->bkeq = true;
+        } else if (comp < 0) {
+            elem = NULL;
         }
-    } else {
-        posi->bkeq = false;
     }
     return elem;
 }
