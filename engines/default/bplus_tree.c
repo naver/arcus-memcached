@@ -1072,8 +1072,8 @@ static bplus_elem_item *do_bplus_find_first(bplus_meta *bplus,
                                             const bool forward, const bkey_range *bkrange,
                                             bplus_elem_posi *path, const bool path_flag)
 {
-    bplus_indx_node *root = bplus->root;
-    bplus_ops       *ops = bplus->ops;
+    assert(bplus->root);
+    bplus_ops *ops = bplus->ops;
     bplus_indx_node *node;
     bplus_elem_item *elem;
     int mid, left, right, comp;
@@ -1082,10 +1082,10 @@ static bplus_elem_item *do_bplus_find_first(bplus_meta *bplus,
 
     if (bkrange == NULL) {
         if (forward) {
-            path[0].node = do_bplus_get_first_leaf(root, (path_flag ? path : NULL));
+            path[0].node = do_bplus_get_first_leaf(bplus->root, (path_flag ? path : NULL));
             path[0].indx = 0;
         } else {
-            path[0].node = do_bplus_get_last_leaf(root, (path_flag ? path : NULL));
+            path[0].node = do_bplus_get_last_leaf(bplus->root, (path_flag ? path : NULL));
             path[0].indx = path[0].node->used_count - 1;
         }
         path[0].bkeq = false;
@@ -1308,6 +1308,7 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
                                 void *delete_arg,
                                 uint32_t *opcost, size_t *space_decreased)
 {
+    assert(bplus->root);
     bplus_indx_node *root = bplus->root;
     bplus_elem_item *elem;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
@@ -1697,6 +1698,8 @@ bplus_elem_item *bplus_scan_first(bplus_meta *bplus,
                                   bplus_elem_posi *posi,
                                   bool *satisfied)
 {
+    assert(bplus->root);
+
     bplus_elem_item *elem = do_bplus_find_first(bplus, forward, bkrange, posi, false);
     if (elem) {
         *satisfied = (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter));
