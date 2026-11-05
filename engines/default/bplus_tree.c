@@ -87,17 +87,6 @@ static inline bool do_bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem
     }
 }
 
-static uint32_t do_bplus_elem_find_outside(const bplus_elem_posi *posi)
-{
-    if (posi->indx == 0 && posi->node->prev == NULL) {
-        return BPLUS_OUTSIDE_LEFT;
-    }
-    if (posi->indx >= posi->node->used_count && posi->node->next == NULL) {
-        return BPLUS_OUTSIDE_RIGHT;
-    }
-    return 0;
-}
-
 static bplus_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
 {
     size_t ntotal = (node_depth > 0 ? sizeof(bplus_indx_node) : sizeof(bplus_leaf_node));
@@ -1417,32 +1406,13 @@ bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreas
     return elem;
 }
 
-uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const bool forward)
-{
-    if (posi->node == NULL) {
-        if (posi->indx == BPLUS_ITEM_COUNT) return BPLUS_OUTSIDE_LEFT;
-        if (posi->indx == 0)                return BPLUS_OUTSIDE_RIGHT;
-        return 0;
-    }
-    /* the bkey of the found elem isn't same with the from_bkey of bkey range */
-    assert(posi->node->ndepth == 0); /* leaf node */
-    if (forward) {
-        if (posi->node->prev == NULL && posi->indx == 0) /* the first element */
-            return BPLUS_OUTSIDE_LEFT;
-    } else {
-        if (posi->node->next == NULL && posi->indx == posi->node->used_count - 1) /* the last element */
-            return BPLUS_OUTSIDE_RIGHT;
-    }
-    return 0;
-}
-
 bool bplus_elem_get(bplus_meta *bplus,
                     const void *bkey, uint32_t nbkey,
                     const void *value, uint32_t nvalue,
                     const eflag_filter *efilter,
                     const bool delete, void *delete_arg,
                     bplus_elem_item **elem_array,
-                    uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
+                    uint32_t *opcost, size_t *space_decreased)
 {
     assert(bplus->root);
     bplus_indx_node *root = bplus->root;
@@ -1452,12 +1422,10 @@ bool bplus_elem_get(bplus_meta *bplus,
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem == NULL) {
-        if (outside) *outside = do_bplus_elem_find_outside(&path[0]);
         return false;
     }
 
     if (opcost) *opcost += 1;
-    if (outside) *outside = 0;
     if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         elem->refcount++;
         if (delete) {
@@ -1476,7 +1444,7 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
                              const uint32_t offset, const uint32_t count,
                              const bool delete, void *delete_arg,
                              bplus_elem_item **elem_array,
-                             uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
+                             uint32_t *opcost, size_t *space_decreased)
 {
     assert(bplus->root);
     bplus_indx_node *root = bplus->root;
@@ -1492,17 +1460,11 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = do_bplus_find_first(bplus, forward, bkrange, path, delete);
     if (elem == NULL) {
-        if (outside) *outside = bplus_posi_outside(&path[0], forward);
         return 0;
     }
 
     bplus_elem_posi c_posi = path[0];
     bplus_elem_posi s_posi = c_posi; /* save the current posi */
-    if (outside) *outside = 0;
-
-    if (c_posi.bkeq == false) {
-        if (outside) *outside |= bplus_posi_outside(&c_posi, forward);
-    }
 
     if (delete) {
         /* prepare upper node path
@@ -1580,10 +1542,6 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
     if (delete && tot_found > 0) {
         bplus->tot_elem_cnt -= tot_found;
         do_bplus_node_merge(bplus, path, forward, node_cnt, space_decreased);
-    }
-
-    if (c_posi.node == NULL) {
-        if (outside) *outside |= bplus_posi_outside(&c_posi, forward);
     }
 
     return tot_found;

@@ -759,10 +759,20 @@ static void do_btree_overflow_trim(btree_meta_info *info,
     (((info)->mflags & COLL_META_FLAG_TRIMMED) != 0 && \
      ((info)->ovflact == OVFL_SMALLEST_TRIM || (info)->ovflact == OVFL_LARGEST_TRIM))
 
-static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info, uint32_t outside)
+static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
+                                                   const void *bkey, uint32_t nbkey)
 {
-    return ((info->ovflact == OVFL_SMALLEST_TRIM && (outside & BPLUS_OUTSIDE_LEFT)) ||
-            (info->ovflact == OVFL_LARGEST_TRIM  && (outside & BPLUS_OUTSIDE_RIGHT)));
+    bplus_meta *bplus = &info->bplus;
+
+    if (bplus->root == NULL) return false;
+
+    if (info->ovflact == OVFL_SMALLEST_TRIM) {
+        btree_elem_item *min_bkey_elem = (btree_elem_item *)bplus_get_first_elem(bplus->root);
+        return BKEY_ISLT(bkey, nbkey, min_bkey_elem->data, min_bkey_elem->nbkey);
+    } else { /* OVFL_LARGEST_TRIM */
+        btree_elem_item *max_bkey_elem = (btree_elem_item *)bplus_get_last_elem(bplus->root);
+        return BKEY_ISGT(bkey, nbkey, max_bkey_elem->data, max_bkey_elem->nbkey);
+    }
 }
 
 static uint32_t do_btree_elem_get(btree_meta_info *info,
@@ -776,19 +786,19 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
     assert(bplus->root);
     btree_delete_ctx delete_ctx = {info, ELEM_DELETE_NORMAL};
     uint32_t tot_found = 0;
-    uint32_t outside;
-    uint32_t *outside_ptr = BTREE_NEED_TRIM_NOTIFICATION(info) ? &outside : NULL;
     size_t space_decreased = 0;
 
     if (opcost) *opcost = 0;
-    *potentialbkeytrim = false;
+    *potentialbkeytrim = (BTREE_NEED_TRIM_NOTIFICATION(info) &&
+                          (do_btree_overlapped_with_trimmed_space(info, bkrange->from_bkey, bkrange->from_nbkey) ||
+                           do_btree_overlapped_with_trimmed_space(info, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange))));
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
         assert(offset == 0);
         bool ret = bplus_elem_get(bplus, bkrange->from_bkey, bkrange->from_nbkey,
                                   NULL, 0, efilter,
                                   delete, &delete_ctx,
-                                  (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
+                                  (bplus_elem_item **)elem_array, opcost, &space_decreased);
         if (ret) {
             tot_found++;
             if (delete && info->stotal > 0 && space_decreased > 0) {
@@ -802,7 +812,7 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
 
         tot_found = bplus_elem_get_bulk(bplus, (bkrtype != BKEY_RANGE_TYPE_DSC), bkrange, efilter,
                                         offset, count, delete, &delete_ctx,
-                                        (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
+                                        (bplus_elem_item **)elem_array, opcost, &space_decreased);
 
         if (delete) {
             if (info->stotal > 0 && space_decreased > 0) {
@@ -810,10 +820,6 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
             }
             CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
         }
-    }
-
-    if (outside_ptr != NULL) {
-       *potentialbkeytrim = do_btree_overlapped_with_trimmed_space(info, outside);
     }
 
     if (delete && tot_found > 0) {
@@ -1157,7 +1163,6 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
     btree_elem_item *elem, *comp;
     btree_elem_item *trim_elem;
     bplus_elem_posi posi;
-    uint32_t outside;
     int comp_idx;
     int curr_idx = -1; /* curr scan index */
     int free_idx = 0;  /* free scan list */
@@ -1196,24 +1201,20 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
 
         elem = (btree_elem_item *)bplus_scan_first(bplus, ascending, bkrange, efilter, &posi, &satisfied);
         if (elem == NULL) { /* No elements within the bkey range */
-            if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
-                outside = bplus_posi_outside(&posi, ascending);
-                if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-                    /* Some elements weren't cached because of overflow trim */
-                    do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
-                }
+            if (BTREE_NEED_TRIM_NOTIFICATION(info) &&
+                do_btree_overlapped_with_trimmed_space(info, bkrange->from_bkey, bkrange->from_nbkey)) {
+                /* Some elements weren't cached because of overflow trim */
+                do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
             }
             do_item_release(it); continue;
         }
 
         if (posi.bkeq == false) {
-            if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
-                outside = bplus_posi_outside(&posi, ascending);
-                if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-                    /* Some elements weren't cached because of overflow trim */
-                    do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
-                    do_item_release(it); continue;
-                }
+            if (BTREE_NEED_TRIM_NOTIFICATION(info) &&
+                do_btree_overlapped_with_trimmed_space(info, bkrange->from_bkey, bkrange->from_nbkey)) {
+                /* Some elements weren't cached because of overflow trim */
+                do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
+                do_item_release(it); continue;
             }
         } else if (bkrtype != BKEY_RANGE_TYPE_SIN) {
             /* initialize for the next scan */
@@ -1225,14 +1226,12 @@ scan_next:
             elem = (btree_elem_item *)bplus_scan_next(bplus, &posi, ascending, bkrange, efilter);
             if (elem == NULL) {
                 if (posi.node == NULL) {
-                    if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
-                        outside = bplus_posi_outside(&posi, ascending);
-                        if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-                            /* Some elements weren't cached because of overflow trim */
-                            trim_elem = (btree_elem_item *)(ascending ? bplus_get_last_elem(bplus->root)
-                                                                      : bplus_get_first_elem(bplus->root));
-                            do_btree_smget_add_trim(smres, kidx, trim_elem);
-                        }
+                    if (BTREE_NEED_TRIM_NOTIFICATION(info) &&
+                        do_btree_overlapped_with_trimmed_space(info, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange))) {
+                        /* Some elements weren't cached because of overflow trim */
+                        trim_elem = (btree_elem_item *)(ascending ? bplus_get_last_elem(bplus->root)
+                                                                  : bplus_get_first_elem(bplus->root));
+                        do_btree_smget_add_trim(smres, kidx, trim_elem);
                     }
                 }
                 do_item_release(it); continue;
@@ -1375,7 +1374,6 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     uint16_t first_idx = 0;
     uint16_t curr_idx;
     uint16_t comp_idx;
-    uint32_t outside;
     int i, cmp_res;
     int mid, left, right;
     int sort_count = sort_sindx_cnt;
@@ -1416,13 +1414,11 @@ scan_next:
         if (elem == NULL) {
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
-                if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
-                    outside = bplus_posi_outside(&btree_scan_buf[curr_idx].posi, ascending);
-                    if (do_btree_overlapped_with_trimmed_space(info, outside)) {
-                        trim_elem = (btree_elem_item *)(ascending ? bplus_get_last_elem(info->bplus.root)
-                                                                  : bplus_get_first_elem(info->bplus.root));
-                        do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, trim_elem);
-                    }
+                if (BTREE_NEED_TRIM_NOTIFICATION(info) &&
+                    do_btree_overlapped_with_trimmed_space(info, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange))) {
+                    trim_elem = (btree_elem_item *)(ascending ? bplus_get_last_elem(info->bplus.root)
+                                                              : bplus_get_first_elem(info->bplus.root));
+                    do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, trim_elem);
                 }
             }
             first_idx++; sort_count--;
