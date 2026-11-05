@@ -1286,7 +1286,7 @@ bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
 
     if (opcost) *opcost = 0;
-    if (root == NULL) return 0;
+    if (root == NULL) return NULL;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
@@ -1319,6 +1319,10 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
     uint32_t skip_cnt = 0;
     int i;
 
+    if (opcost) *opcost = 0;
+    if (root == NULL) return 0;
+
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = do_bplus_find_first(bplus, forward, bkrange, path, true);
     if (elem == NULL) return 0;
 
@@ -1397,8 +1401,12 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
 
 bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decreased)
 {
+    bplus_indx_node *root = bplus->root;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
-    bplus_indx_node *leaf = do_bplus_get_first_leaf(bplus->root, path);
+
+    if (root == NULL) return NULL;
+
+    bplus_indx_node *leaf = do_bplus_get_first_leaf(root, path);
     path[0].node = leaf;
     path[0].indx = 0;
     bplus_elem_item *elem = BPLUS_GET_ELEM_ITEM(leaf, 0);
@@ -1408,8 +1416,12 @@ bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decrea
 
 bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreased)
 {
+    bplus_indx_node *root = bplus->root;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
-    bplus_indx_node *leaf = do_bplus_get_last_leaf(bplus->root, path);
+
+    if (root == NULL) return NULL;
+
+    bplus_indx_node *leaf = do_bplus_get_last_leaf(root, path);
     path[0].node = leaf;
     path[0].indx = leaf->used_count - 1;
     bplus_elem_item *elem = BPLUS_GET_ELEM_ITEM(leaf, leaf->used_count - 1);
@@ -1444,10 +1456,13 @@ bool bplus_elem_get(bplus_meta *bplus,
                     bplus_elem_item **elem_array,
                     uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
 {
-    assert(bplus->root);
     bplus_indx_node *root = bplus->root;
     bplus_elem_item *elem;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
+
+    if (opcost) *opcost = 0;
+    if (outside) *outside = 0;
+    if (root == NULL) return false;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
@@ -1457,7 +1472,6 @@ bool bplus_elem_get(bplus_meta *bplus,
     }
 
     if (opcost) *opcost += 1;
-    if (outside) *outside = 0;
     if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         elem->refcount++;
         if (delete) {
@@ -1478,7 +1492,6 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
                              bplus_elem_item **elem_array,
                              uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
 {
-    assert(bplus->root);
     bplus_indx_node *root = bplus->root;
     bplus_elem_item *elem;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
@@ -1489,6 +1502,10 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
     uint32_t skip_cnt = 0;
     int i;
 
+    if (opcost) *opcost = 0;
+    if (outside) *outside = 0;
+    if (root == NULL) return 0;
+
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = do_bplus_find_first(bplus, forward, bkrange, path, delete);
     if (elem == NULL) {
@@ -1498,7 +1515,6 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
 
     bplus_elem_posi c_posi = path[0];
     bplus_elem_posi s_posi = c_posi; /* save the current posi */
-    if (outside) *outside = 0;
 
     if (c_posi.bkeq == false) {
         if (outside) *outside |= bplus_posi_outside(&c_posi, forward);
@@ -1698,7 +1714,11 @@ bplus_elem_item *bplus_scan_first(bplus_meta *bplus,
                                   bplus_elem_posi *posi,
                                   bool *satisfied)
 {
-    assert(bplus->root);
+    if (bplus->root == NULL) {
+        posi->node = NULL;
+        posi->indx = (forward ? 0 : BPLUS_ITEM_COUNT);
+        return NULL;
+    }
 
     bplus_elem_item *elem = do_bplus_find_first(bplus, forward, bkrange, posi, false);
     if (elem) {
