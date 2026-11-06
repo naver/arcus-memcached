@@ -183,12 +183,12 @@ ENGINE_ERROR_CODE bplus_elem_add(bplus_meta *bplus,
                                  size_t *space_increased);
 bplus_elem_item *bplus_elem_replace(bplus_elem_posi *posi, bplus_elem_item *new_elem);
 
-bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
-                                   const void *bkey, uint32_t nbkey,
-                                   const void *value, uint32_t nvalue,
-                                   const eflag_filter *efilter,
-                                   void *delete_arg,
-                                   uint32_t *opcost, size_t *space_decreased);
+uint32_t bplus_elem_delete(bplus_meta *bplus,
+                           const void *bkey, uint32_t nbkey,
+                           const void *value, uint32_t nvalue,
+                           const eflag_filter *efilter,
+                           void *delete_arg,
+                           uint32_t *opcost, size_t *space_decreased);
 uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
                                 const bool forward, const bkey_range *bkrange,
                                 const eflag_filter *efilter,
@@ -199,13 +199,13 @@ bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decrea
 bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreased);
 
 uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const bool forward);
-bool bplus_elem_get(bplus_meta *bplus,
-                    const void *bkey, uint32_t nbkey,
-                    const void *value, uint32_t nvalue,
-                    const eflag_filter *efilter,
-                    const bool delete, void *delete_arg,
-                    bplus_elem_item **elem_array,
-                    uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
+uint32_t bplus_elem_get(bplus_meta *bplus,
+                        const void *bkey, uint32_t nbkey,
+                        const void *value, uint32_t nvalue,
+                        const eflag_filter *efilter,
+                        const bool delete, void *delete_arg,
+                        bplus_elem_item **elem_array,
+                        uint32_t *opcost, uint32_t *outside, size_t *space_decreased);
 uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
                              const bool forward, const bkey_range *bkrange,
                              const eflag_filter *efilter,

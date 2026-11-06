@@ -521,18 +521,15 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      enum elem_delete_cause cause)
 {
     btree_delete_ctx delete_ctx = {info, cause};
-    uint32_t tot_found = 0;
+    uint32_t tot_found;
     size_t space_decreased = 0;
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
-        btree_elem_item *deleted = (btree_elem_item *)bplus_elem_delete(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
-                                                                        NULL, 0, efilter,
-                                                                        &delete_ctx, opcost, &space_decreased);
-        if (deleted != NULL) {
-            tot_found++;
-            if (info->stotal > 0 && space_decreased > 0) {
-                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
-            }
+        tot_found = bplus_elem_delete(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                      NULL, 0, efilter,
+                                      &delete_ctx, opcost, &space_decreased);
+        if (info->stotal > 0 && space_decreased > 0) {
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
         }
     } else {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
@@ -765,7 +762,7 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                                   uint32_t *opcost, bool *potentialbkeytrim)
 {
     btree_delete_ctx delete_ctx = {info, ELEM_DELETE_NORMAL};
-    uint32_t tot_found = 0;
+    uint32_t tot_found;
     uint32_t outside;
     uint32_t *outside_ptr = BTREE_NEED_TRIM_NOTIFICATION(info) ? &outside : NULL;
     size_t space_decreased = 0;
@@ -773,15 +770,11 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
     *potentialbkeytrim = false;
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
-        bool ret = bplus_elem_get(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
-                                  NULL, 0, efilter,
-                                  delete, &delete_ctx,
-                                  (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
-        if (ret) {
-            tot_found++;
-            if (delete && info->stotal > 0 && space_decreased > 0) {
-                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
-            }
+        tot_found = bplus_elem_get(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
+                                   NULL, 0, efilter, delete, &delete_ctx,
+                                   (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
+        if (delete && info->stotal > 0 && space_decreased > 0) {
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
         }
     } else {
         if (delete) {

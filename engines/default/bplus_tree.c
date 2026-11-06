@@ -1274,31 +1274,31 @@ bplus_elem_item *bplus_elem_replace(bplus_elem_posi *posi, bplus_elem_item *new_
     return old_elem;
 }
 
-bplus_elem_item *bplus_elem_delete(bplus_meta *bplus,
-                                   const void *bkey, uint32_t nbkey,
-                                   const void *value, uint32_t nvalue,
-                                   const eflag_filter *efilter,
-                                   void *delete_arg,
-                                   uint32_t *opcost, size_t *space_decreased)
+uint32_t bplus_elem_delete(bplus_meta *bplus,
+                           const void *bkey, uint32_t nbkey,
+                           const void *value, uint32_t nvalue,
+                           const eflag_filter *efilter,
+                           void *delete_arg,
+                           uint32_t *opcost, size_t *space_decreased)
 {
     bplus_indx_node *root = bplus->root;
     bplus_elem_item *elem;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
 
     if (opcost) *opcost = 0;
-    if (root == NULL) return NULL;
+    if (root == NULL) return 0;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
-    if (elem == NULL) return NULL;
+    if (elem == NULL) return 0;
 
     if (opcost) *opcost += 1;
     if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter)) {
         do_bplus_elem_unlink(bplus, path, space_decreased);
         bplus->ops->delete_post(elem, delete_arg);
-        return elem;
+        return 1;
     }
-    return NULL;
+    return 0;
 }
 
 uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
@@ -1448,13 +1448,13 @@ uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const bool forward)
     return 0;
 }
 
-bool bplus_elem_get(bplus_meta *bplus,
-                    const void *bkey, uint32_t nbkey,
-                    const void *value, uint32_t nvalue,
-                    const eflag_filter *efilter,
-                    const bool delete, void *delete_arg,
-                    bplus_elem_item **elem_array,
-                    uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
+uint32_t bplus_elem_get(bplus_meta *bplus,
+                        const void *bkey, uint32_t nbkey,
+                        const void *value, uint32_t nvalue,
+                        const eflag_filter *efilter,
+                        const bool delete, void *delete_arg,
+                        bplus_elem_item **elem_array,
+                        uint32_t *opcost, uint32_t *outside, size_t *space_decreased)
 {
     bplus_indx_node *root = bplus->root;
     bplus_elem_item *elem;
@@ -1462,13 +1462,13 @@ bool bplus_elem_get(bplus_meta *bplus,
 
     if (opcost) *opcost = 0;
     if (outside) *outside = 0;
-    if (root == NULL) return false;
+    if (root == NULL) return 0;
 
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem == NULL) {
         if (outside) *outside = do_bplus_elem_find_outside(&path[0]);
-        return false;
+        return 0;
     }
 
     if (opcost) *opcost += 1;
@@ -1479,9 +1479,9 @@ bool bplus_elem_get(bplus_meta *bplus,
             bplus->ops->delete_post(elem, delete_arg);
         }
         elem_array[0] = elem;
-        return true;
+        return 1;
     }
-    return false;
+    return 0;
 }
 
 uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
