@@ -365,10 +365,6 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
     uint32_t new_neflag;
     uint32_t new_nbytes;
 
-    if (bplus->root == NULL) {
-        return ENGINE_ELEM_ENOENT;
-    }
-
     elem = (btree_elem_item *)bplus_elem_find(bplus, bkey, nbkey, NULL, 0, path);
     if (elem == NULL) {
         return ENGINE_ELEM_ENOENT;
@@ -524,18 +520,12 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      const uint32_t count, uint32_t *opcost,
                                      enum elem_delete_cause cause)
 {
-    bplus_meta *bplus = &info->bplus;
     btree_delete_ctx delete_ctx = {info, cause};
     uint32_t tot_found = 0;
     size_t space_decreased = 0;
 
-    if (opcost) *opcost = 0;
-    if (bplus->root == NULL) return 0;
-    assert(bplus->root->ndepth < BPLUS_MAX_DEPTH);
-
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
-        assert(offset == 0);
-        btree_elem_item *deleted = (btree_elem_item *)bplus_elem_delete(bplus, bkrange->from_bkey, bkrange->from_nbkey,
+        btree_elem_item *deleted = (btree_elem_item *)bplus_elem_delete(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
                                                                         NULL, 0, efilter,
                                                                         &delete_ctx, opcost, &space_decreased);
         if (deleted != NULL) {
@@ -547,7 +537,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
     } else {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
 
-        tot_found = bplus_elem_delete_bulk(bplus, (bkrtype != BKEY_RANGE_TYPE_DSC), bkrange, efilter, offset, count,
+        tot_found = bplus_elem_delete_bulk(&info->bplus, (bkrtype != BKEY_RANGE_TYPE_DSC), bkrange, efilter, offset, count,
                                            &delete_ctx, opcost, &space_decreased);
         if (info->stotal > 0 && space_decreased > 0) {
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, space_decreased);
@@ -730,15 +720,17 @@ static void do_btree_overflow_trim(btree_meta_info *info,
             info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
     } else { /* overflow_type == OVFL_TYPE_COUNT */
         assert(overflow_type == OVFL_TYPE_COUNT);
-        bplus_meta *bplus = &info->bplus;
         bplus_elem_item *edge_elem;
         size_t space_decreased = 0;
         btree_delete_ctx delete_ctx = {info, ELEM_DELETE_TRIM};
 
-        if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM)
-            edge_elem = bplus_delete_first_elem(bplus, &space_decreased);
-        else
-            edge_elem = bplus_delete_last_elem(bplus, &space_decreased);
+        if (info->ovflact == OVFL_SMALLEST_TRIM ||
+            info->ovflact == OVFL_SMALLEST_SILENT_TRIM) {
+            edge_elem = bplus_delete_first_elem(&info->bplus, &space_decreased);
+        } else {
+            edge_elem = bplus_delete_last_elem(&info->bplus, &space_decreased);
+        }
+        assert(edge_elem != NULL);
 
         if (trimmed_elems != NULL) {
             edge_elem->refcount++;
@@ -772,20 +764,16 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                                   btree_elem_item **elem_array,
                                   uint32_t *opcost, bool *potentialbkeytrim)
 {
-    bplus_meta *bplus = &info->bplus;
-    assert(bplus->root);
     btree_delete_ctx delete_ctx = {info, ELEM_DELETE_NORMAL};
     uint32_t tot_found = 0;
     uint32_t outside;
     uint32_t *outside_ptr = BTREE_NEED_TRIM_NOTIFICATION(info) ? &outside : NULL;
     size_t space_decreased = 0;
 
-    if (opcost) *opcost = 0;
     *potentialbkeytrim = false;
 
     if (bkrtype == BKEY_RANGE_TYPE_SIN) {
-        assert(offset == 0);
-        bool ret = bplus_elem_get(bplus, bkrange->from_bkey, bkrange->from_nbkey,
+        bool ret = bplus_elem_get(&info->bplus, bkrange->from_bkey, bkrange->from_nbkey,
                                   NULL, 0, efilter,
                                   delete, &delete_ctx,
                                   (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
@@ -800,7 +788,7 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
             CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
         }
 
-        tot_found = bplus_elem_get_bulk(bplus, (bkrtype != BKEY_RANGE_TYPE_DSC), bkrange, efilter,
+        tot_found = bplus_elem_get_bulk(&info->bplus, (bkrtype != BKEY_RANGE_TYPE_DSC), bkrange, efilter,
                                         offset, count, delete, &delete_ctx,
                                         (bplus_elem_item **)elem_array, opcost, outside_ptr, &space_decreased);
 
@@ -1179,7 +1167,6 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
         }
 
         info = (btree_meta_info *)item_get_meta(it);
-        bplus_meta *bplus = &info->bplus;
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
             do_btree_smget_add_miss(smres, kidx, ENGINE_UNREADABLE);
             do_item_release(it); continue;
@@ -1192,8 +1179,8 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
             do_item_release(it);
             ret = ENGINE_EBADBKEY; break;
         }
-        assert(bplus->root != NULL);
 
+        bplus_meta *bplus = &info->bplus;
         elem = (btree_elem_item *)bplus_scan_first(bplus, ascending, bkrange, efilter, &posi, &satisfied);
         if (elem == NULL) { /* No elements within the bkey range */
             if (BTREE_NEED_TRIM_NOTIFICATION(info)) {
