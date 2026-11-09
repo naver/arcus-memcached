@@ -157,6 +157,7 @@ extern "C" {
         ITEM_TYPE_SET,
         ITEM_TYPE_MAP,
         ITEM_TYPE_BTREE,
+        ITEM_TYPE_ZSET,
         ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
 

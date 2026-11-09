@@ -1913,6 +1913,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
     assert(DEFAULT_SET_SIZE <= config->max_set_size);
     assert(DEFAULT_MAP_SIZE <= config->max_map_size);
     assert(DEFAULT_BTREE_SIZE <= config->max_btree_size);
+    assert(DEFAULT_ZSET_SIZE <= config->max_zset_size);
 
     logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum list  size = (%u/%u)\n",
                 DEFAULT_LIST_SIZE, config->max_list_size);
@@ -1922,6 +1923,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
                 DEFAULT_MAP_SIZE, config->max_map_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum btree size = (%u/%u)\n",
                 DEFAULT_BTREE_SIZE, config->max_btree_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum zset  size = (%u/%u)\n",
+                DEFAULT_ZSET_SIZE, config->max_zset_size);
 
     item_clog_init(engine);
     if (item_base_init(engine) < 0) {
@@ -1931,6 +1934,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
     item_set_coll_init(engine);
     item_map_coll_init(engine);
     item_btree_coll_init(engine);
+    item_zset_coll_init(engine);
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
     return ENGINE_SUCCESS;
@@ -1974,6 +1978,7 @@ void item_final(struct default_engine *engine_ptr)
     item_set_coll_final(engine);
     item_map_coll_final(engine);
     item_btree_coll_final(engine);
+    item_zset_coll_final(engine);
     item_clog_final(engine);
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }

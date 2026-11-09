@@ -185,6 +185,8 @@ default_engine_la_SOURCES= \
                     engines/default/coll_map.h \
                     engines/default/coll_btree.c \
                     engines/default/coll_btree.h \
+                    engines/default/coll_zset.c \
+                    engines/default/coll_zset.h \
                     engines/default/slabs.c \
                     engines/default/slabs.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
