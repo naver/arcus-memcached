@@ -64,6 +64,7 @@ struct engine_config {
    uint32_t   max_set_size;
    uint32_t   max_map_size;
    uint32_t   max_btree_size;
+   uint32_t   max_zset_size;
    uint32_t   max_element_bytes;
    uint32_t   scrub_count;
 #ifdef ENABLE_PERSISTENCE

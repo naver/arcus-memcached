@@ -31,12 +31,14 @@
 #define DEFAULT_MAX_SET_SIZE   50000
 #define DEFAULT_MAX_MAP_SIZE   50000
 #define DEFAULT_MAX_BTREE_SIZE 50000
+#define DEFAULT_MAX_ZSET_SIZE  50000
 
 /* default collection size */
 #define DEFAULT_LIST_SIZE  4000
 #define DEFAULT_SET_SIZE   4000
 #define DEFAULT_MAP_SIZE   4000
 #define DEFAULT_BTREE_SIZE 4000
+#define DEFAULT_ZSET_SIZE  4000
 
 /* max element bytes */
 #define MINIMUM_MAX_ELEMENT_BYTES 1024
@@ -77,6 +79,8 @@ enum upd_type {
     UPD_BT_ELEM_INSERT,
     UPD_BT_ELEM_DELETE,
     UPD_BT_ELEM_DELETE_DROP,
+    /* zset command */
+    UPD_ZSET_CREATE,
     /* not command */
     UPD_NONE
 };
@@ -106,7 +110,8 @@ enum elem_delete_cause {
 #define ITEM_IFLAG_SET   2   /* set item */
 #define ITEM_IFLAG_MAP   3   /* map item */
 #define ITEM_IFLAG_BTREE 4   /* b+tree item */
-#define ITEM_IFLAG_COLL  7   /* collection item: list/set/map/b+tree */
+#define ITEM_IFLAG_ZSET  5   /* zset item */
+#define ITEM_IFLAG_COLL  7   /* collection item: list/set/map/b+tree/zset */
 /* 2) item flag: decreasing order */
 #define ITEM_LINKED      32  /* linked to assoc hash table */
 #define ITEM_INTERNAL    64  /* internal cache item */
@@ -118,6 +123,7 @@ enum elem_delete_cause {
 #define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_SET)
 #define IS_MAP_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_MAP)
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
+#define IS_ZSET_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_ZSET)
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
 /* collection meta flag */
@@ -211,6 +217,19 @@ typedef struct _btree_elem_item {
     unsigned char data[];        /* data: <bkey, [eflag,] value> */
 } btree_elem_item;
 
+/* zset element */
+typedef struct _zset_elem_item {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;         /* which slab class we're in */
+    uint8_t  linked;              /* link count */
+    uint8_t  nbkey;               /* the size of the score(bkey). 0 means 8-byte uint64 */
+    uint8_t  neflag;              /* the size of the element flag */
+    uint16_t nbytes;              /* the size of the member */
+    struct _zset_elem_item *next; /* hash chain next */
+    uint32_t hval;                /* hash value (of the member) */
+    unsigned char data[];         /* data: <score(bkey), [eflag,] member> */
+} zset_elem_item;
+
 /* list meta info */
 typedef struct _list_meta_info {
     int32_t  mcnt;      /* maximum count */
@@ -266,6 +285,19 @@ typedef struct _btree_meta_info {
     bkey_t   maxbkeyrange;
     bplus_meta bplus;
 } btree_meta_info;
+
+/* zset meta info */
+typedef struct _zset_meta_info {
+    int32_t  mcnt;      /* maximum count */
+    int32_t  ccnt;      /* current count */
+    uint8_t  ovflact;   /* overflow action */
+    uint8_t  mflags;    /* sticky, readable flags */
+    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+    uint32_t stotal;    /* total space */
+    uint8_t  bktype;    /* score(bkey) type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
+    bplus_meta bplus;
+    htree_meta htree;
+} zset_meta_info;
 
 /* common meta info of list and set */
 typedef struct _coll_meta_info {

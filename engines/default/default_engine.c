@@ -146,6 +146,13 @@ static int check_configuration(struct engine_config *conf)
                 conf->max_btree_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
         return -1;
     }
+    if (conf->max_zset_size < MINIMUM_MAX_COLL_SIZE ||
+        conf->max_zset_size > MAXIMUM_MAX_COLL_SIZE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_zset_size(%u) is out of range(%u~%u).\n",
+                conf->max_zset_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
+        return -1;
+    }
     if (conf->max_element_bytes < MINIMUM_MAX_ELEMENT_BYTES ||
         conf->max_element_bytes > MAXIMUM_MAX_ELEMENT_BYTES) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -212,6 +219,7 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
         { .key = "max_set_size",      .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_set_size },
         { .key = "max_map_size",      .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_map_size },
         { .key = "max_btree_size",    .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_btree_size },
+        { .key = "max_zset_size",     .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_zset_size },
         { .key = "max_element_bytes", .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_element_bytes },
         { .key = "scrub_count",       .datatype = DT_UINT32, .value.dt_uint32 = &se->config.scrub_count},
 #ifdef ENABLE_PERSISTENCE
@@ -1514,6 +1522,21 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         }
         pthread_mutex_unlock(&engine->cache_lock);
     }
+    else if (strcmp(config_key, "max_zset_size") == 0) {
+        int32_t new_maxsize = *(int32_t*)config_value;
+        if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
+            /* -1 means the engine defined MAXIMUM_MAX_COLL_SIZE */
+            new_maxsize = MAXIMUM_MAX_COLL_SIZE;
+        }
+        /* It can be only increased */
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxsize > engine->config.max_zset_size) {
+            engine->config.max_zset_size = new_maxsize;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
         uint32_t new_maxelembytes = *(uint32_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
@@ -1615,6 +1638,11 @@ default_get_config(ENGINE_HANDLE* handle, const void* cookie,
     else if (strcmp(config_key, "max_btree_size") == 0) {
         pthread_mutex_lock(&engine->cache_lock);
         *(uint32_t*)config_value = engine->config.max_btree_size;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "max_zset_size") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_zset_size;
         pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
@@ -2110,6 +2138,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_set_size = DEFAULT_MAX_SET_SIZE,
          .max_map_size = DEFAULT_MAX_MAP_SIZE,
          .max_btree_size = DEFAULT_MAX_BTREE_SIZE,
+         .max_zset_size = DEFAULT_MAX_ZSET_SIZE,
          .max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES,
          .scrub_count = DEFAULT_SCRUB_COUNT,
 #ifdef ENABLE_PERSISTENCE

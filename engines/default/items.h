@@ -23,6 +23,7 @@
 #include "coll_set.h"
 #include "coll_map.h"
 #include "coll_btree.h"
+#include "coll_zset.h"
 
 /*
  * You should not try to aquire any of the item locks before calling these
