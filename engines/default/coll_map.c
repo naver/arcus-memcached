@@ -171,8 +171,7 @@ static void do_map_elem_delete_post(map_meta_info *info,
                                     map_elem_item *elem,
                                     enum elem_delete_cause cause)
 {
-    CLOG_MAP_ELEM_DELETE(info, elem, cause);
-
+    /* Do the event callback before CLOG so that its changes are logged. */
     if (info->mflags & COLL_META_FLAG_EVENT) {
         event_data_t ev = { .type = EVENT_ELEM_DELETE,
                             .coll_item = COLL_GET_HASH_ITEM(info),
@@ -181,6 +180,8 @@ static void do_map_elem_delete_post(map_meta_info *info,
         /* Allow refcount adjustment to manage elem's lifecycle. */
         elem->refcount -= ev.target_ref;
     }
+
+    CLOG_MAP_ELEM_DELETE(info, elem, cause);
 
     info->ccnt--;
     if (info->stotal > 0) { /* apply memory space */
@@ -254,8 +255,7 @@ static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, htree_prev_inf
     map_elem_item *replaced = (map_elem_item *)htree_elem_replace(pinfo, (htree_elem_item *)new_elem);
     assert(replaced == old_elem);
 
-    CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
-
+    /* Do the event callback before CLOG so that its changes are logged. */
     if (info->mflags & COLL_META_FLAG_EVENT) {
         event_data_t ev = { .type = EVENT_ELEM_REPLACE,
                             .coll_item = COLL_GET_HASH_ITEM(info),
@@ -266,6 +266,8 @@ static ENGINE_ERROR_CODE do_map_elem_replace(map_meta_info *info, htree_prev_inf
         new_elem->refcount += ev.target_ref;
         old_elem->refcount -= ev.source_ref;
     }
+
+    CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
 
     size_t old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
     size_t new_stotal = slabs_space_size(do_map_elem_ntotal(new_elem));
@@ -412,8 +414,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
         return ret;
     }
 
-    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
-
+    /* Do the event callback before CLOG so that its changes are logged. */
     if (info->mflags & COLL_META_FLAG_EVENT) {
         event_data_t ev = { .type = EVENT_ELEM_INSERT,
                             .coll_item = COLL_GET_HASH_ITEM(info),
@@ -422,6 +423,8 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
         /* Allow refcount adjustment to manage elem's lifecycle. */
         elem->refcount += ev.target_ref;
     }
+
+    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
 
     info->ccnt++;
     if (1) { /* apply memory space */
