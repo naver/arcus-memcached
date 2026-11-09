@@ -1136,52 +1136,46 @@ static bplus_elem_item *do_bplus_find_first(bplus_meta *bplus,
         path[0].bkeq = true;
         path[0].node = node;
         path[0].indx = mid;
-        /* elem != NULL */
-    } else { /* duplicate_bkeys always takes one more step here, even on a tie */
-        path[0].bkeq = false;
-        if (forward) { /* ascending bkey range */
-            /* find the next element */
-            if (left < node->used_count) {
-                path[0].node = node;
-                path[0].indx = left;
-            } else {
-                path[0].node = node->next;
-                path[0].indx = 0;
-                if (path[0].node != NULL) {
-                    if (path_flag) do_bplus_incr_path(path, 1);
-                }
-            }
+        return elem; /* elem != NULL */
+    }
+
+    /* duplicate_bkeys always takes one more step here, even on a tie */
+    path[0].bkeq = false;
+    if (forward) { /* ascending bkey range */
+        /* find the next element */
+        if (left < node->used_count) {
+            path[0].node = node;
+            path[0].indx = left;
+        } else {
+            path[0].node = node->next;
+            path[0].indx = 0;
             if (path[0].node == NULL) {
-                elem = NULL;
-            } else {
-                elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
-                bkey = ops->get_bkey(elem, &nbkey);
-                if (BKEY_ISGT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
-                    elem = NULL;
+                return NULL; /* No element */
             }
-        } else { /* descending bkey range */
-            /* find the prev element */
-            if (right >= 0) {
-                path[0].node = node;
-                path[0].indx = right;
-            } else {
-                path[0].node = node->prev;
-                if (node->prev != NULL) {
-                    path[0].indx = node->prev->used_count-1;
-                    if (path_flag) do_bplus_decr_path(path, 1);
-                } else {
-                    path[0].indx = BPLUS_ITEM_COUNT;
-                }
-            }
-            if (path[0].node == NULL) {
-                elem = NULL;
-            } else {
-                elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
-                bkey = ops->get_bkey(elem, &nbkey);
-                if (BKEY_ISLT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
-                    elem = NULL;
-            }
+            if (path_flag) do_bplus_incr_path(path, 1);
         }
+        elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
+        bkey = ops->get_bkey(elem, &nbkey);
+        if (BKEY_ISGT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
+            return NULL;
+    } else { /* descending bkey range */
+        /* find the prev element */
+        if (right >= 0) {
+            path[0].node = node;
+            path[0].indx = right;
+        } else {
+            path[0].node = node->prev;
+            if (path[0].node == NULL) {
+                path[0].indx = BPLUS_ITEM_COUNT;
+                return NULL; /* No element */
+            }
+            path[0].indx = node->prev->used_count-1;
+            if (path_flag) do_bplus_decr_path(path, 1);
+        }
+        elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
+        bkey = ops->get_bkey(elem, &nbkey);
+        if (BKEY_ISLT(bkey, nbkey, BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange)))
+            return NULL;
     }
     return elem;
 }
