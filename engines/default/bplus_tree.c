@@ -87,17 +87,6 @@ static inline bool do_bplus_elem_filter(bplus_meta *bplus, bplus_elem_item *elem
     }
 }
 
-static uint32_t do_bplus_elem_find_outside(const bplus_elem_posi *posi)
-{
-    if (posi->indx == 0 && posi->node->prev == NULL) {
-        return BPLUS_OUTSIDE_LEFT;
-    }
-    if (posi->indx >= posi->node->used_count && posi->node->next == NULL) {
-        return BPLUS_OUTSIDE_RIGHT;
-    }
-    return 0;
-}
-
 static bplus_indx_node *do_bplus_node_alloc(const uint8_t node_depth)
 {
     size_t ntotal = (node_depth > 0 ? sizeof(bplus_indx_node) : sizeof(bplus_leaf_node));
@@ -1425,18 +1414,15 @@ bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreas
 
 uint32_t bplus_posi_outside(const bplus_elem_posi *posi, const bool forward)
 {
-    if (posi->node == NULL) {
-        if (posi->indx == BPLUS_ITEM_COUNT) return BPLUS_OUTSIDE_LEFT;
-        if (posi->indx == 0)                return BPLUS_OUTSIDE_RIGHT;
-        return 0;
-    }
-    /* the bkey of the found elem isn't same with the from_bkey of bkey range */
-    assert(posi->node->ndepth == 0); /* leaf node */
     if (forward) {
+        if (posi->node == NULL)
+            return BPLUS_OUTSIDE_RIGHT;
         if (posi->node->prev == NULL && posi->indx == 0) /* the first element */
             return BPLUS_OUTSIDE_LEFT;
     } else {
-        if (posi->node->next == NULL && posi->indx == posi->node->used_count - 1) /* the last element */
+        if (posi->node == NULL)
+            return BPLUS_OUTSIDE_LEFT;
+        if (posi->node->next == NULL && posi->indx == posi->node->used_count-1) /* the last element */
             return BPLUS_OUTSIDE_RIGHT;
     }
     return 0;
@@ -1461,7 +1447,12 @@ uint32_t bplus_elem_get(bplus_meta *bplus,
     assert(root->ndepth < BPLUS_MAX_DEPTH);
     elem = bplus_elem_find(bplus, bkey, nbkey, value, nvalue, path);
     if (elem == NULL) {
-        if (outside) *outside = do_bplus_elem_find_outside(&path[0]);
+        if (path[0].node->next == NULL &&
+            path[0].indx >= path[0].node->used_count) { /* beyond the last element */
+            path[0].node = NULL;
+            path[0].indx = 0;
+        }
+        if (outside) *outside = bplus_posi_outside(&path[0], 1);
         return 0;
     }
 
