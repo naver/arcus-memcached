@@ -1088,7 +1088,7 @@ static bplus_elem_item *do_bplus_find_first(bplus_meta *bplus,
     node = do_bplus_find_leaf(bplus, bkrange->from_bkey, bkrange->from_nbkey,
                               forward,
                               (path_flag ? path : NULL), &elem);
-    if (elem != NULL) { /* the bkey(from_bkey) is found */
+    if (elem != NULL) { /* the bkey(from_bkey) is found (unique bkeys only) */
         /* while traversing to leaf node, the bkey can be found.
          * refer to do_bplus_find_leaf() function.
          */
@@ -1175,7 +1175,11 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
 {
     bplus_elem_item *elem;
 
-    posi->bkeq = false;
+    if (posi->bkeq == true) { /* reached to the end of bkey range */
+        assert(!bplus->duplicate_bkeys);
+        return NULL;
+    }
+
     do_bplus_incr_posi(posi);
     if (posi->node == NULL) {
         return NULL;
@@ -1189,10 +1193,11 @@ static bplus_elem_item *do_bplus_find_next(bplus_meta *bplus,
         bkey = bplus->ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey,
                          BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
+        if (comp > 0) {
+            return NULL;
+        }
         if (comp == 0) {
             if (!bplus->duplicate_bkeys) posi->bkeq = true;
-        } else if (comp > 0) {
-            elem = NULL;
         }
     }
     return elem;
@@ -1204,7 +1209,11 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
 {
     bplus_elem_item *elem;
 
-    posi->bkeq = false;
+    if (posi->bkeq == true) { /* reached to the end of bkey range */
+        assert(!bplus->duplicate_bkeys);
+        return NULL;
+    }
+
     do_bplus_decr_posi(posi);
     if (posi->node == NULL) {
         return NULL;
@@ -1218,10 +1227,11 @@ static bplus_elem_item *do_bplus_find_prev(bplus_meta *bplus,
         bkey = bplus->ops->get_bkey(elem, &nbkey);
         comp = BKEY_COMP(bkey, nbkey,
                          BKRANGE_TO_BKEY(bkrange), BKRANGE_TO_NBKEY(bkrange));
+        if (comp < 0) {
+            return NULL;
+        }
         if (comp == 0) {
             if (!bplus->duplicate_bkeys) posi->bkeq = true;
-        } else if (comp < 0) {
-            elem = NULL;
         }
     }
     return elem;
@@ -1337,12 +1347,8 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
         }
 
         /* get the next element */
-        if (c_posi.bkeq == true) {
-            elem = NULL; /* reached to the end of bkey range */
-        } else {
-            elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
-                            : do_bplus_find_prev(bplus, &c_posi, bkrange));
-        }
+        elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
+                        : do_bplus_find_prev(bplus, &c_posi, bkrange));
         if (elem == NULL) break;
 
         if (s_posi.node != c_posi.node) {
@@ -1513,6 +1519,7 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
             upth[i] = path[i];
         }
     }
+
     /* clear the bkeq flag of current posi */
     c_posi.bkeq = false;
 
@@ -1535,12 +1542,8 @@ uint32_t bplus_elem_get_bulk(bplus_meta *bplus,
         }
 
         /* get the next element */
-        if (c_posi.bkeq == true) {
-            elem = NULL; /* reached to the end of bkey range */
-        } else {
-            elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
-                            : do_bplus_find_prev(bplus, &c_posi, bkrange));
-        }
+        elem = (forward ? do_bplus_find_next(bplus, &c_posi, bkrange)
+                        : do_bplus_find_prev(bplus, &c_posi, bkrange));
         if (elem == NULL) break;
 
         if (s_posi.node != c_posi.node) {
@@ -1720,9 +1723,6 @@ bplus_elem_item *bplus_scan_next(bplus_meta *bplus,
 {
     bplus_elem_item *elem;
     do {
-        if (posi->bkeq == true) {
-            return NULL;
-        }
         if (forward) {
             elem = do_bplus_find_next(bplus, posi, bkrange);
         } else {
@@ -1786,9 +1786,6 @@ uint32_t bplus_elem_count(bplus_meta *bplus,
             if (efilter == NULL || do_bplus_elem_filter(bplus, elem, efilter))
                 tot_found++;
 
-            if (posi.bkeq == true) {
-                elem = NULL; break;
-            }
             elem = (forward ? do_bplus_find_next(bplus, &posi, bkrange)
                             : do_bplus_find_prev(bplus, &posi, bkrange));
         } while (elem != NULL);
