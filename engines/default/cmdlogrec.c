@@ -31,10 +31,9 @@
 #define PERSISTENCE_MINOR_VERSION 0 /* backward compatibility */
 //#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
-#ifdef offsetof
-#error "offsetof is already defined"
-#endif
+#ifndef offsetof
 #define offsetof(type, member) __builtin_offsetof(type, member)
+#endif
 
 #define EXPIRED_REL_EXPTIME(exptime) ((exptime) == 1)
 
