@@ -223,11 +223,6 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
         return ENGINE_ELEM_EEXISTS;
     }
 
-    /* insert position (bplus) only; member already unique, so never found */
-    bplus_elem_item *find = bplus_elem_find(&info->bplus, elem->data, elem->nbkey,
-                                            member, elem->nbytes, path);
-    assert(find == NULL);
-
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if (IS_STICKY_COLLFLG(info)) {
@@ -250,6 +245,11 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
         return ret;
     }
 
+    /* insert position (bplus) only; member already unique, so never found */
+    bplus_elem_item *find = bplus_elem_find(&info->bplus, elem->data, elem->nbkey,
+                                            member, elem->nbytes, path);
+    assert(find == NULL);
+
     ret = bplus_elem_add(&info->bplus, path, (bplus_elem_item *)elem, &space_increased);
     if (ret != ENGINE_SUCCESS) {
         size_t space_decreased = 0;
@@ -257,8 +257,10 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
         assert(elem->linked == 0);
 
         assert(space_increased >= space_decreased);
-        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_ZSET,
-                           space_increased - space_decreased);
+        if (space_increased > space_decreased) {
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_ZSET,
+                               space_increased - space_decreased);
+        }
 
         return ret;
     }
