@@ -337,7 +337,8 @@ static ENGINE_ERROR_CODE do_zset_elem_add(zset_meta_info *info, htree_prev_info 
 }
 
 static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem,
-                                             const bool replace_if_exist, bool *replaced)
+                                             const bool replace_if_exist,
+                                             ENGINE_UPDATE_COND cond, bool *replaced)
 {
     zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
     ENGINE_ERROR_CODE ret;
@@ -361,6 +362,11 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
     if (find != NULL) {
         if (!replace_if_exist) {
             return ENGINE_ELEM_EEXISTS;
+        }
+        /* update condition check: score */
+        if ((cond == UPDATE_COND_GT && !BKEY_ISGT(elem->data, elem->nbkey, find->data, find->nbkey)) ||
+            (cond == UPDATE_COND_LT && !BKEY_ISLT(elem->data, elem->nbkey, find->data, find->nbkey))) {
+            return ENGINE_NOT_STORED;
         }
 #ifdef ENABLE_STICKY_ITEM
         /* Do not check sticky memory limit.
@@ -428,12 +434,15 @@ void zset_elem_free(zset_elem_item *elem)
 }
 
 ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
-                                   zset_elem_item *elem, const bool replace_if_exist, item_attr *attrp,
+                                   zset_elem_item *elem, const bool replace_if_exist,
+                                   ENGINE_UPDATE_COND cond, item_attr *attrp,
                                    bool *replaced, bool *created, const void *cookie)
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_ZSET_ELEM_INSERT);
+
+    assert(replace_if_exist || cond == UPDATE_COND_NONE);
 
     *created = false;
     *replaced = false;
@@ -452,7 +461,7 @@ ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_zset_elem_insert(it, elem, replace_if_exist, replaced);
+        ret = do_zset_elem_insert(it, elem, replace_if_exist, cond, replaced);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
