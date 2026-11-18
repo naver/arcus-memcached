@@ -60,12 +60,13 @@ static const void *zset_get_bkey(const bplus_elem_item *elem, uint32_t *nbkey);
 static const void *zset_get_eflag(const bplus_elem_item *elem, uint32_t *neflag);
 static const void *zset_get_value(const bplus_elem_item *elem, uint32_t *nvalue);
 static const void *zset_get_key(const htree_elem_item *elem, uint16_t *nkey);
+static void        zset_elem_delete_post(bplus_elem_item *elem, void *arg);
 
 static bplus_ops zset_bplus_ops = {
     .get_bkey    = zset_get_bkey,
     .get_eflag   = zset_get_eflag,
     .get_value   = zset_get_value,
-    .delete_post = NULL
+    .delete_post = zset_elem_delete_post
 };
 
 static htree_ops zset_htree_ops = {
@@ -101,6 +102,14 @@ static const void *zset_get_key(const htree_elem_item *elem, uint16_t *nkey)
     const zset_elem_item *e = (const zset_elem_item *)elem;
     *nkey = e->nbytes;
     return e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
+}
+
+static void zset_elem_delete_post(bplus_elem_item *elem, void *arg)
+{
+    if (arg == NULL) {
+        /* the caller handles the elem */
+        return;
+    }
 }
 
 static inline uint32_t do_zset_elem_ntotal(zset_elem_item *elem)
@@ -202,26 +211,73 @@ static void do_zset_elem_free(zset_elem_item *elem)
     do_item_mem_free(elem, ntotal);
 }
 
-static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem)
+static ENGINE_ERROR_CODE do_zset_elem_replace(zset_meta_info *info, htree_prev_info *pinfo,
+                                              zset_elem_item *new_elem)
 {
-    zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
-    htree_prev_info pinfo;
+    zset_elem_item *old_elem = (pinfo->prev != NULL) ? (zset_elem_item *)pinfo->prev->next
+                                                     : (zset_elem_item *)pinfo->node->htab[pinfo->hidx];
+    const void *member = new_elem->data + ZSET_REAL_NBKEY(new_elem->nbkey) + new_elem->neflag;
+    bplus_elem_posi path[BPLUS_MAX_DEPTH];
+    zset_elem_item *replaced;
+    size_t space_increased = 0;
+    size_t space_decreased = 0;
+
+    /* same score and eflag: nothing to replace */
+    if (old_elem->nbkey == new_elem->nbkey && old_elem->neflag == new_elem->neflag &&
+        memcmp(old_elem->data, new_elem->data,
+               ZSET_REAL_NBKEY(new_elem->nbkey) + new_elem->neflag) == 0) {
+        do_zset_elem_free(new_elem);
+        return ENGINE_SUCCESS;
+    }
+
+    /* replace in bplus tree */
+    if (bplus_elem_find(&info->bplus, new_elem->data, new_elem->nbkey,
+                        member, new_elem->nbytes, path) != NULL) {
+        /* same score: replace in place */
+        replaced = (zset_elem_item *)bplus_elem_replace(&path[0], (bplus_elem_item *)new_elem);
+        assert(replaced == old_elem);
+    } else {
+        /* score changed: add at the new position, then remove the old one */
+        ENGINE_ERROR_CODE ret = bplus_elem_add(&info->bplus, path, (bplus_elem_item *)new_elem,
+                                               &space_increased);
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
+        }
+        uint32_t deleted = bplus_elem_delete(&info->bplus, old_elem->data, old_elem->nbkey,
+                                             member, old_elem->nbytes, NULL,
+                                             NULL, NULL, &space_decreased);
+        assert(deleted == 1);
+    }
+
+    /* replace in hash tree */
+    replaced = (zset_elem_item *)htree_elem_replace(pinfo, (htree_elem_item *)new_elem);
+    assert(replaced == old_elem);
+    assert(old_elem->linked == 0);
+
+    /* apply memory space */
+    size_t old_stotal = slabs_space_size(do_zset_elem_ntotal(old_elem)) + space_decreased;
+    size_t new_stotal = slabs_space_size(do_zset_elem_ntotal(new_elem)) + space_increased;
+
+    if (new_stotal != old_stotal) {
+        assert(info->stotal > 0);
+        if (new_stotal > old_stotal)
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_ZSET, (new_stotal-old_stotal));
+        else
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_ZSET, (old_stotal-new_stotal));
+    }
+
+    if (old_elem->refcount == 0) {
+        do_zset_elem_free(old_elem);
+    }
+    return ENGINE_SUCCESS;
+}
+
+static ENGINE_ERROR_CODE do_zset_elem_add(zset_meta_info *info, htree_prev_info *pinfo,
+                                          zset_elem_item *elem)
+{
+    ENGINE_ERROR_CODE ret;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
     const void *member = elem->data + ZSET_REAL_NBKEY(elem->nbkey) + elem->neflag;
-
-    /* validation check: score(bkey) type */
-    if (info->ccnt > 0) {
-        if ((info->bktype == BKEY_TYPE_UINT64 && elem->nbkey >  0) ||
-            (info->bktype == BKEY_TYPE_BINARY && elem->nbkey == 0)) {
-            return ENGINE_EBADBKEY;
-        }
-    }
-
-    /* check uniqueness + insert position (htree) */
-    elem->hval = genhash_string_hash(member, elem->nbytes);
-    if (htree_elem_find(&info->htree, elem->hval, member, elem->nbytes, &pinfo) != NULL) {
-        return ENGINE_ELEM_EEXISTS;
-    }
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
@@ -239,8 +295,7 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
     }
 
     size_t space_increased = 0;
-    ENGINE_ERROR_CODE ret = htree_elem_add(&info->htree, (htree_elem_item *)elem,
-                                           &pinfo, &space_increased);
+    ret = htree_elem_add(&info->htree, (htree_elem_item *)elem, pinfo, &space_increased);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -279,6 +334,49 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
     }
 
     return ENGINE_SUCCESS;
+}
+
+static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem,
+                                             const bool replace_if_exist, bool *replaced)
+{
+    zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
+    ENGINE_ERROR_CODE ret;
+    htree_prev_info pinfo;
+    zset_elem_item *find;
+    const void *member = elem->data + ZSET_REAL_NBKEY(elem->nbkey) + elem->neflag;
+
+    /* validation check: score(bkey) type */
+    if (info->ccnt > 0) {
+        if ((info->bktype == BKEY_TYPE_UINT64 && elem->nbkey >  0) ||
+            (info->bktype == BKEY_TYPE_BINARY && elem->nbkey == 0)) {
+            return ENGINE_EBADBKEY;
+        }
+    }
+
+    /* check uniqueness + insert position (htree) */
+    elem->hval = genhash_string_hash(member, elem->nbytes);
+    find = (zset_elem_item *)htree_elem_find(&info->htree, elem->hval,
+                                             member, elem->nbytes, &pinfo);
+
+    if (find != NULL) {
+        if (!replace_if_exist) {
+            return ENGINE_ELEM_EEXISTS;
+        }
+#ifdef ENABLE_STICKY_ITEM
+        /* Do not check sticky memory limit.
+         * Because, only score and eflag can be changed,
+         * so the space difference is negligible.
+         */
+#endif
+        ret = do_zset_elem_replace(info, &pinfo, elem);
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
+        }
+        if (replaced) *replaced = true;
+        return ENGINE_SUCCESS;
+    }
+
+    return do_zset_elem_add(info, &pinfo, elem);
 }
 
 /*
@@ -330,14 +428,15 @@ void zset_elem_free(zset_elem_item *elem)
 }
 
 ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
-                                   zset_elem_item *elem, item_attr *attrp,
-                                   bool *created, const void *cookie)
+                                   zset_elem_item *elem, const bool replace_if_exist, item_attr *attrp,
+                                   bool *replaced, bool *created, const void *cookie)
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_ZSET_ELEM_INSERT);
 
     *created = false;
+    *replaced = false;
 
     LOCK_CACHE();
     ret = do_zset_item_find(key, nkey, DONT_UPDATE, &it);
@@ -353,7 +452,7 @@ ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_zset_elem_insert(it, elem);
+        ret = do_zset_elem_insert(it, elem, replace_if_exist, replaced);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
