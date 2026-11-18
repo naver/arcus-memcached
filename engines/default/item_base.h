@@ -228,6 +228,7 @@ typedef struct _zset_elem_item {
     uint16_t nbytes;              /* the size of the member */
     struct _zset_elem_item *next; /* hash chain next */
     uint32_t hval;                /* hash value (of the member) */
+    uint32_t reserved;            /* align data to 8 bytes */
     unsigned char data[];         /* data: <score(bkey), [eflag,] member> */
 } zset_elem_item;
 
