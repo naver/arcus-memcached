@@ -32,8 +32,8 @@ zset_elem_item *zset_elem_alloc(const uint32_t nbkey, const uint32_t neflag, con
 void zset_elem_free(zset_elem_item *elem);
 
 ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
-                                   zset_elem_item *elem, item_attr *attrp,
-                                   bool *created, const void *cookie);
+                                   zset_elem_item *elem, const bool replace_if_exist, item_attr *attrp,
+                                   bool *replaced, bool *created, const void *cookie);
 
 ENGINE_ERROR_CODE item_zset_coll_init(void *engine_ptr);
 void item_zset_coll_final(void *engine_ptr);

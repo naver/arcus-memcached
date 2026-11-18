@@ -646,9 +646,7 @@ htree_elem_item *htree_elem_replace(htree_prev_info *pinfo, htree_elem_item *new
         pinfo->node->htab[hidx] = new_elem;
     }
     new_elem->linked++;
-
     old_elem->linked--;
-    assert(old_elem->linked == 0);
 
     return old_elem;
 }
