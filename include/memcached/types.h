@@ -213,6 +213,13 @@ extern "C" {
         BITWISE_OP_MAX
     } ENGINE_BITWISE_OP;
 
+    /* upsert condition */
+    typedef enum {
+        UPDATE_COND_NONE = 0,
+        UPDATE_COND_GT,
+        UPDATE_COND_LT
+    } ENGINE_UPDATE_COND;
+
     /* vlaue item */
     typedef struct {
         uint32_t len;       /* value length */
