@@ -12088,7 +12088,7 @@ static inline int get_eflag_from_str(const char *str, unsigned char *eflag)
     return -1;
 }
 
-static inline int get_bkey_range_from_str(const char *str, bkey_range *bkrange)
+static inline int get_bkey_range_from_str(char *str, bkey_range *bkrange)
 {
     char *delimiter = strstr(str, "..");
     if (delimiter != NULL) { /* range */
@@ -12124,7 +12124,7 @@ static inline int get_bkey_range_from_str(const char *str, bkey_range *bkrange)
     return 0;
 }
 
-static inline int get_position_range_from_str(const char *str, uint32_t *from_posi, uint32_t *to_posi)
+static inline int get_position_range_from_str(char *str, uint32_t *from_posi, uint32_t *to_posi)
 {
     char *delimiter = strstr(str, "..");
     if (delimiter != NULL) { /* range */

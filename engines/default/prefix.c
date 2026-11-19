@@ -339,7 +339,7 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     uint32_t   nkey = it->nkey;
     int prefix_depth = 0;
     int i = 0;
-    char *token;
+    const char *token;
     prefix_t *pt = NULL;
     prefix_t_list_elem prefix_list[DEFAULT_PREFIX_MAX_DEPTH];
 
