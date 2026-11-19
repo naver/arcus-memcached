@@ -161,7 +161,7 @@ static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t npr
     uint32_t hashval;
 #ifdef NESTED_PREFIX
     size_t length;
-    char *token = NULL;
+    const char *token = NULL;
     int i = 0;
     int prefix_depth = 0;
     PREFIX_STATS_elem prefix_stats_list[PREFIX_MAX_DEPTH];
@@ -403,7 +403,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey)
     PREFIX_STATS *pfs;
     uint32_t hashval;
     size_t length;
-    char *token = NULL;
+    const char *token = NULL;
     int i = 0;
     int prefix_depth = 0;
 
