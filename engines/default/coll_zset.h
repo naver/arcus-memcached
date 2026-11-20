@@ -36,6 +36,12 @@ ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
                                    ENGINE_UPDATE_COND cond, item_attr *attrp,
                                    bool *replaced, bool *created, const void *cookie);
 
+ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
+                                   const char *member, const uint32_t nbytes,
+                                   const void *score, const uint32_t nscore,
+                                   ENGINE_UPDATE_COND cond, const eflag_update *eupdate,
+                                   const void *cookie);
+
 ENGINE_ERROR_CODE item_zset_coll_init(void *engine_ptr);
 void item_zset_coll_final(void *engine_ptr);
 

@@ -385,6 +385,106 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
     return do_zset_elem_add(info, &pinfo, elem);
 }
 
+static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
+                                             const char *member, const uint32_t nbytes,
+                                             const void *score, const uint32_t nscore,
+                                             ENGINE_UPDATE_COND cond, const eflag_update *eupdate)
+{
+    htree_prev_info pinfo;
+    zset_elem_item *elem;
+    unsigned char *ptr;
+    uint32_t real_nbkey;
+    uint32_t new_nbkey;
+    uint32_t new_neflag;
+
+    int hval = genhash_string_hash(member, nbytes);
+    elem = (zset_elem_item *)htree_elem_find(&info->htree, hval, member, nbytes, &pinfo);
+    if (elem == NULL) {
+        return ENGINE_ELEM_ENOENT;
+    }
+
+    /* validation check: eflag update */
+    if (eupdate != NULL && eupdate->neflag > 0 && eupdate->bitwop < BITWISE_OP_MAX) {
+        if (eupdate->offset >= elem->neflag || eupdate->neflag > (elem->neflag-eupdate->offset)) {
+            return ENGINE_EBADEFLAG;
+        }
+    }
+
+    /* update condition check: score */
+    if ((cond == UPDATE_COND_GT && !BKEY_ISGT(score, nscore, elem->data, elem->nbkey)) ||
+        (cond == UPDATE_COND_LT && !BKEY_ISLT(score, nscore, elem->data, elem->nbkey))) {
+        return ENGINE_NOT_STORED;
+    }
+
+    real_nbkey = ZSET_REAL_NBKEY(elem->nbkey);
+    new_nbkey = (score == NULL ? elem->nbkey : nscore);
+    new_neflag = (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX ? elem->neflag : eupdate->neflag);
+
+    if (elem->refcount == 0 &&
+        (score == NULL || BKEY_ISEQ(score, nscore, elem->data, elem->nbkey)) &&
+        elem->neflag == new_neflag) {
+        /* same score and eflag size */
+        /* do in-place update */
+        if (eupdate != NULL) {
+            if (eupdate->bitwop < BITWISE_OP_MAX) {
+                ptr = elem->data + real_nbkey + eupdate->offset;
+                (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
+            } else {
+                if (eupdate->neflag > 0) {
+                    memcpy(elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
+                }
+            }
+        }
+    } else {
+        /* different score or eflag size */
+#ifdef ENABLE_STICKY_ITEM
+        /* Do not check sticky memory limit.
+         * Because, only score and eflag can be changed,
+         * so the space difference is negligible.
+         */
+#endif
+
+        zset_elem_item *new_elem = do_zset_elem_alloc(new_nbkey, new_neflag, elem->nbytes);
+        if (new_elem == NULL) {
+            return ENGINE_ENOMEM;
+        }
+
+        /* build the new element */
+        if (score != NULL) {
+            memcpy(new_elem->data, score, ZSET_REAL_NBKEY(new_nbkey));
+        } else {
+            memcpy(new_elem->data, elem->data, real_nbkey);
+        }
+        ptr = new_elem->data + ZSET_REAL_NBKEY(new_nbkey);
+
+        if (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX) {
+            if (elem->neflag > 0) {
+                memcpy(ptr, elem->data + real_nbkey, elem->neflag);
+            }
+            if (eupdate != NULL) {
+                (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr + eupdate->offset, eupdate->eflag,
+                                                      eupdate->neflag, ptr + eupdate->offset);
+            }
+        } else {
+            if (eupdate->neflag > 0) {
+                memcpy(ptr, eupdate->eflag, eupdate->neflag);
+            }
+        }
+
+        memcpy(ptr + new_neflag, elem->data + real_nbkey + elem->neflag, elem->nbytes);
+        new_elem->hval = elem->hval;
+
+        /* replace the element */
+        ENGINE_ERROR_CODE ret = do_zset_elem_replace(info, &pinfo, new_elem);
+        if (ret != ENGINE_SUCCESS) {
+            do_zset_elem_free(new_elem);
+            return ret;
+        }
+    }
+
+    return ENGINE_SUCCESS;
+}
+
 /*
  * ZSET Interface Functions
  */
@@ -467,6 +567,42 @@ ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (it) {
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
+    return ret;
+}
+
+ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
+                                   const char *member, const uint32_t nbytes,
+                                   const void *score, const uint32_t nscore,
+                                   ENGINE_UPDATE_COND cond, const eflag_update *eupdate,
+                                   const void *cookie)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_ZSET_ELEM_INSERT);
+
+    assert(score != NULL || eupdate != NULL);
+    assert(score != NULL || cond == UPDATE_COND_NONE);
+
+    LOCK_CACHE();
+    ret = do_zset_item_find(key, nkey, DONT_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) {
+        zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
+        do {
+            if (info->ccnt == 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            if (score != NULL &&
+                ((info->bktype == BKEY_TYPE_UINT64 && nscore >  0) ||
+                 (info->bktype == BKEY_TYPE_BINARY && nscore == 0))) {
+                ret = ENGINE_EBADBKEY; break;
+            }
+            ret = do_zset_elem_update(info, member, nbytes, score, nscore, cond, eupdate);
+        } while(0);
         do_item_release(it);
     }
     UNLOCK_CACHE();
