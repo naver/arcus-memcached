@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+#include <stddef.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -30,10 +31,6 @@
 #define PERSISTENCE_MAJOR_VERSION 1
 #define PERSISTENCE_MINOR_VERSION 0 /* backward compatibility */
 //#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
-
-#ifndef offsetof
-#define offsetof(type, member) __builtin_offsetof(type, member)
-#endif
 
 #define EXPIRED_REL_EXPTIME(exptime) ((exptime) == 1)
 
