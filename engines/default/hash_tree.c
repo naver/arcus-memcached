@@ -289,8 +289,10 @@ static uint32_t do_htree_elem_delete_bulk(htree_meta *htree, htree_node *node, c
                 do_htree_elem_unlink(node, hidx, NULL, elem);
 
                 /* link deleted elem into list; returned to caller */
-                elem->next = *deleted_head;
-                *deleted_head = elem;
+                if (deleted_head != NULL) {
+                    elem->next = *deleted_head;
+                    *deleted_head = elem;
+                }
 
                 if (count > 0 && fcnt >= count) break;
                 elem = node->htab[hidx];

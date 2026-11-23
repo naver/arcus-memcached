@@ -135,6 +135,7 @@ static inline size_t ITEM_ntotal(const hash_item *item)
         if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
         else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
         else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else if (IS_ZSET_ITEM(item)) ntotal += sizeof(zset_meta_info);
         else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
         ntotal += (item->nkey + item->nbytes);
@@ -443,6 +444,8 @@ static uint32_t do_coll_elem_delete_with_count(hash_item *it, uint32_t count)
             ndeleted = map_elem_delete_with_count((void *)info, count);
         } else if (IS_LIST_ITEM(it)) {
             ndeleted = list_elem_delete_with_count((void *)info, count);
+        } else if (IS_ZSET_ITEM(it)) {
+            ndeleted = zset_elem_delete_with_count((void *)info, count);
         }
     }
     return ndeleted;
