@@ -53,6 +53,12 @@ static inline void UNLOCK_CACHE(void)
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
+/* zset delete context for bplus delete_post (see zset_elem_delete_post) */
+typedef struct {
+    zset_meta_info *info;
+    bool            htree_delete; /* delete in hash tree */
+} zset_delete_ctx;
+
 /*
  * ZSET collection management
  */
@@ -102,14 +108,6 @@ static const void *zset_get_key(const htree_elem_item *elem, uint16_t *nkey)
     const zset_elem_item *e = (const zset_elem_item *)elem;
     *nkey = e->nbytes;
     return e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
-}
-
-static void zset_elem_delete_post(bplus_elem_item *elem, void *arg)
-{
-    if (arg == NULL) {
-        /* the caller handles the elem */
-        return;
-    }
 }
 
 static inline uint32_t do_zset_elem_ntotal(zset_elem_item *elem)
@@ -209,6 +207,37 @@ static void do_zset_elem_free(zset_elem_item *elem)
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_zset_elem_ntotal(elem);
     do_item_mem_free(elem, ntotal);
+}
+
+static void zset_elem_delete_post(bplus_elem_item *elem, void *arg)
+{
+    if (arg == NULL) {
+        /* the caller handles the elem */
+        return;
+    }
+
+    zset_elem_item *e = (zset_elem_item *)elem;
+    zset_delete_ctx *ctx = (zset_delete_ctx *)arg;
+    zset_meta_info *info = ctx->info;
+    size_t space_decreased = 0;
+
+    if (ctx->htree_delete) {
+        const char *member = (const char *)e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
+        zset_elem_item *deleted = (zset_elem_item *)htree_elem_delete(&info->htree, e->hval,
+                                                                      member, e->nbytes,
+                                                                      &space_decreased);
+        assert(deleted == e);
+    }
+
+    info->ccnt--;
+    if (info->stotal > 0) { /* apply memory space */
+        size_t stotal = slabs_space_size(do_zset_elem_ntotal(e)) + space_decreased;
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_ZSET, stotal);
+    }
+    assert(e->linked == 0);
+    if (e->refcount == 0) {
+        do_zset_elem_free(e);
+    }
 }
 
 static ENGINE_ERROR_CODE do_zset_elem_replace(zset_meta_info *info, htree_prev_info *pinfo,
@@ -485,6 +514,45 @@ static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
     return ENGINE_SUCCESS;
 }
 
+static uint32_t do_zset_elem_delete(zset_meta_info *info, const int nummembers,
+                                    const field_t *mlist)
+{
+    bplus_meta *bplus = &info->bplus;
+    uint32_t delcnt = 0;
+    zset_delete_ctx delete_ctx = {info, false};
+    size_t space_decreased = 0;
+
+    if (bplus->root != NULL) {
+        if (nummembers == 0) {
+            uint32_t hdelcnt = htree_elem_delete_bulk(&info->htree, 0 /* all */,
+                                                      NULL, &space_decreased);
+            delcnt = bplus_elem_delete_bulk(bplus, true, NULL, NULL, 0, 0 /* all */,
+                                            &delete_ctx, NULL, &space_decreased);
+            assert(delcnt == hdelcnt);
+        } else {
+            for (int ii = 0; ii < nummembers; ii++) {
+                int hval = genhash_string_hash(mlist[ii].value, mlist[ii].length);
+                zset_elem_item *elem = (zset_elem_item *)htree_elem_delete(&info->htree, hval,
+                                                                           mlist[ii].value,
+                                                                           mlist[ii].length,
+                                                                           &space_decreased);
+                if (elem != NULL) {
+                    uint32_t deleted = bplus_elem_delete(bplus, elem->data, elem->nbkey,
+                                                         mlist[ii].value, mlist[ii].length, NULL,
+                                                         &delete_ctx, NULL, &space_decreased);
+                    assert(deleted == 1);
+                    delcnt++;
+                }
+            }
+        }
+
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_ZSET, space_decreased);
+        }
+    }
+    return delcnt;
+}
+
 /*
  * ZSET Interface Functions
  */
@@ -609,6 +677,60 @@ ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
 
     PERSISTENCE_ACTION_END(ret);
     return ret;
+}
+
+ENGINE_ERROR_CODE zset_elem_delete(const char *key, const uint32_t nkey,
+                                   const int nummembers, const field_t *mlist,
+                                   const bool drop_if_empty,
+                                   uint32_t *del_count, bool *dropped,
+                                   const void *cookie)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_ZSET_ELEM_DELETE_DROP
+                                                    : UPD_ZSET_ELEM_DELETE));
+
+    *dropped = false;
+
+    LOCK_CACHE();
+    ret = do_zset_item_find(key, nkey, DONT_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) { /* it != NULL */
+        zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
+        *del_count = do_zset_elem_delete(info, nummembers, mlist);
+        if (*del_count > 0) {
+            if (info->ccnt == 0 && drop_if_empty) {
+                assert(info->bplus.root == NULL && info->htree.root == NULL);
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                *dropped = true;
+            }
+        } else {
+            ret = ENGINE_ELEM_ENOENT;
+        }
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
+    return ret;
+}
+
+uint32_t zset_elem_delete_with_count(zset_meta_info *info, const uint32_t count)
+{
+    bplus_meta *bplus = &info->bplus;
+    uint32_t delcnt = 0;
+    size_t space_decreased = 0;
+
+    // cache_lock is held by caller.
+    if (bplus->root != NULL) {
+        zset_delete_ctx delete_ctx = {info, true};
+        /* hash tree delete is done in delete_post */
+        delcnt = bplus_elem_delete_bulk(bplus, true, NULL, NULL, 0, count,
+                                        &delete_ctx, NULL, &space_decreased);
+        if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_ZSET, space_decreased);
+        }
+    }
+    return delcnt;
 }
 
 /*

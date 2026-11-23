@@ -82,6 +82,8 @@ enum upd_type {
     /* zset command */
     UPD_ZSET_CREATE,
     UPD_ZSET_ELEM_INSERT,
+    UPD_ZSET_ELEM_DELETE,
+    UPD_ZSET_ELEM_DELETE_DROP,
     /* not command */
     UPD_NONE
 };

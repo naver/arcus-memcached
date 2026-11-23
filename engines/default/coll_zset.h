@@ -42,6 +42,14 @@ ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
                                    ENGINE_UPDATE_COND cond, const eflag_update *eupdate,
                                    const void *cookie);
 
+ENGINE_ERROR_CODE zset_elem_delete(const char *key, const uint32_t nkey,
+                                   const int nummembers, const field_t *mlist,
+                                   const bool drop_if_empty,
+                                   uint32_t *del_count, bool *dropped,
+                                   const void *cookie);
+
+uint32_t zset_elem_delete_with_count(zset_meta_info *info, const uint32_t count);
+
 ENGINE_ERROR_CODE item_zset_coll_init(void *engine_ptr);
 void item_zset_coll_final(void *engine_ptr);
 
