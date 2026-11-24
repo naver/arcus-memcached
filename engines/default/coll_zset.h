@@ -48,6 +48,12 @@ ENGINE_ERROR_CODE zset_elem_delete(const char *key, const uint32_t nkey,
                                    uint32_t *del_count, bool *dropped,
                                    const void *cookie);
 
+ENGINE_ERROR_CODE zset_elem_delete_by_score(const char *key, const uint32_t nkey,
+                                            const bkey_range *srange, const eflag_filter *efilter,
+                                            const uint32_t req_count, const bool drop_if_empty,
+                                            uint32_t *del_count, uint32_t *opcost, bool *dropped,
+                                            const void *cookie);
+
 uint32_t zset_elem_delete_with_count(zset_meta_info *info, const uint32_t count);
 
 ENGINE_ERROR_CODE item_zset_coll_init(void *engine_ptr);
