@@ -209,6 +209,19 @@ static void do_zset_elem_free(zset_elem_item *elem)
     do_item_mem_free(elem, ntotal);
 }
 
+static int do_zset_score_range_type(const bkey_range *srange)
+{
+    if (srange->to_nbkey == BKEY_NULL) {
+        return BKEY_RANGE_TYPE_SIN;
+    } else {
+        int comp = BKEY_COMP(srange->from_bkey, srange->from_nbkey,
+                             srange->to_bkey,   srange->to_nbkey);
+        if (comp == 0)      return BKEY_RANGE_TYPE_SIN; /* single score */
+        else if (comp < 0)  return BKEY_RANGE_TYPE_ASC; /* ascending */
+        else                return BKEY_RANGE_TYPE_DSC; /* descending */
+    }
+}
+
 static void zset_elem_delete_post(bplus_elem_item *elem, void *arg)
 {
     if (arg == NULL) {
@@ -553,6 +566,24 @@ static uint32_t do_zset_elem_delete(zset_meta_info *info, const int nummembers,
     return delcnt;
 }
 
+static uint32_t do_zset_elem_delete_by_score(zset_meta_info *info,
+                                             const int srtype, const bkey_range *srange,
+                                             const eflag_filter *efilter, const uint32_t count,
+                                             uint32_t *opcost)
+{
+    zset_delete_ctx delete_ctx = {info, true};
+    uint32_t delcnt;
+    size_t space_decreased = 0;
+
+    /* hash tree delete is done in delete_post */
+    delcnt = bplus_elem_delete_bulk(&info->bplus, (srtype != BKEY_RANGE_TYPE_DSC), srange,
+                                    efilter, 0, count, &delete_ctx, opcost, &space_decreased);
+    if (info->stotal > 0 && space_decreased > 0) { /* apply memory space */
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_ZSET, space_decreased);
+    }
+    return delcnt;
+}
+
 /*
  * ZSET Interface Functions
  */
@@ -706,6 +737,52 @@ ENGINE_ERROR_CODE zset_elem_delete(const char *key, const uint32_t nkey,
         } else {
             ret = ENGINE_ELEM_ENOENT;
         }
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
+    return ret;
+}
+
+ENGINE_ERROR_CODE zset_elem_delete_by_score(const char *key, const uint32_t nkey,
+                                            const bkey_range *srange, const eflag_filter *efilter,
+                                            const uint32_t req_count, const bool drop_if_empty,
+                                            uint32_t *del_count, uint32_t *opcost, bool *dropped,
+                                            const void *cookie)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+    int srtype = do_zset_score_range_type(srange);
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_ZSET_ELEM_DELETE_DROP
+                                                    : UPD_ZSET_ELEM_DELETE));
+
+    *dropped = false;
+
+    LOCK_CACHE();
+    ret = do_zset_item_find(key, nkey, DONT_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) { /* it != NULL */
+        zset_meta_info *info = (zset_meta_info *)item_get_meta(it);
+        do {
+            if (info->ccnt == 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            if ((info->bktype == BKEY_TYPE_UINT64 && srange->from_nbkey >  0) ||
+                (info->bktype == BKEY_TYPE_BINARY && srange->from_nbkey == 0)) {
+                ret = ENGINE_EBADBKEY; break;
+            }
+            *del_count = do_zset_elem_delete_by_score(info, srtype, srange, efilter,
+                                                      req_count, opcost);
+            if (*del_count > 0) {
+                if (info->ccnt == 0 && drop_if_empty) {
+                    assert(info->bplus.root == NULL && info->htree.root == NULL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                    *dropped = true;
+                }
+            } else {
+                ret = ENGINE_ELEM_ENOENT;
+            }
+        } while(0);
         do_item_release(it);
     }
     UNLOCK_CACHE();
