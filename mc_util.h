@@ -37,13 +37,14 @@ typedef struct _token_buff {
  */
 typedef struct _mblck_node {
     struct _mblck_node *next;
-    char data[1];
+    value_item data;
 } mblck_node_t;
 
 typedef struct _mblck_list {
     void         *pool;
     mblck_node_t *head;
     mblck_node_t *tail;
+    value_item **addnl;
     uint32_t  blck_cnt;
     uint32_t  body_len;
     uint32_t  item_cnt;
@@ -68,8 +69,9 @@ typedef struct _mblck_pool {
 #define MBLCK_GET_BODYLEN(l) ((l)->body_len)
 #define MBLCK_GET_ITEMCNT(l) ((l)->item_cnt)
 #define MBLCK_GET_ITEMLEN(l) ((l)->item_len)
+#define MBLCK_GET_ADDLIST(l) ((l)->addnl)
 #define MBLCK_GET_NEXTBLK(b) ((b)->next)
-#define MBLCK_GET_BODYPTR(b) ((b)->data)
+#define MBLCK_GET_BODYPTR(b) ((b)->data.ptr)
 
 /* memory block functions */
 int  mblck_pool_create(mblck_pool_t *pool, uint32_t blck_len, uint32_t blck_cnt);

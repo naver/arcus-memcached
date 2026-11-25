@@ -31,7 +31,7 @@ static void do_mblck_pool_init(mblck_pool_t *pool, uint32_t blck_len)
     pool->tail = NULL;
     pool->head = NULL;
     pool->blck_len = blck_len;
-    pool->body_len = blck_len - sizeof(void *);
+    pool->body_len = blck_len - (sizeof(void *) + sizeof(uint32_t));
     pool->used_cnt = 0;
     pool->free_cnt = 0;
 }
@@ -107,16 +107,29 @@ int mblck_list_alloc(mblck_pool_t *pool, uint32_t item_len, uint32_t item_cnt,
     }
     assert(pool->free_cnt >= blck_cnt);
 
+    if (blck_cnt > 1) {
+        list->addnl = (value_item **)malloc(sizeof(value_item *) * (blck_cnt - 1));
+        if (list->addnl == NULL) {
+            return -1;
+        }
+    } else {
+        list->addnl = NULL;
+    }
+
+    uint32_t cnt = 0;
     list->pool = (void*)pool;
     list->head = pool->head;
     list->tail = list->head;
     list->blck_cnt = 1;
-    while (list->blck_cnt < blck_cnt) {
+    while (list->blck_cnt + cnt < blck_cnt) {
         list->tail = list->tail->next;
-        list->blck_cnt += 1;
+        list->addnl[cnt] = &list->tail->data;
+        list->addnl[cnt]->len = nitems_per_blck * item_len;
+        cnt += 1;
     }
     pool->head = list->tail->next;
     list->tail->next = NULL;
+    list->blck_cnt += cnt;
 
     if (pool->head == NULL) {
         pool->tail = NULL;
@@ -141,7 +154,11 @@ void mblck_list_merge(mblck_list_t *pri_list, mblck_list_t *add_list)
     add_list->head = NULL;
     add_list->tail = NULL;
     add_list->blck_cnt = 0;
-    /* FIXME: item_cnt and item_len: how to merge them ? */
+    if (add_list->addnl != NULL) {
+        free(add_list->addnl);
+        add_list->addnl = NULL;
+    }
+    /* FIXME: item_cnt, item_len and addnl: how to merge them ? */
 }
 
 void mblck_list_free(mblck_pool_t *pool, mblck_list_t *list)
@@ -160,6 +177,10 @@ void mblck_list_free(mblck_pool_t *pool, mblck_list_t *list)
         list->head = NULL;
         list->tail = NULL;
         list->blck_cnt = 0;
+        if (list->addnl != NULL) {
+            free(list->addnl);
+            list->addnl = NULL;
+        }
     }
     list->pool = NULL;
 }
