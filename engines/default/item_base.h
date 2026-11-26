@@ -225,12 +225,12 @@ typedef struct _zset_elem_item {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  linked;              /* link count */
-    uint8_t  nbkey;               /* the size of the score(bkey). 0 means 8-byte uint64 */
+    uint8_t  reserved_8;          /* no nbkey: score is always uint64 bkey */
     uint8_t  neflag;              /* the size of the element flag */
     uint16_t nbytes;              /* the size of the member */
     struct _zset_elem_item *next; /* hash chain next */
     uint32_t hval;                /* hash value (of the member) */
-    uint32_t reserved;            /* align data to 8 bytes */
+    uint32_t reserved_32;         /* align data to 8 bytes */
     unsigned char data[];         /* data: <score(bkey), [eflag,] member> */
 } zset_elem_item;
 
@@ -298,7 +298,6 @@ typedef struct _zset_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-    uint8_t  bktype;    /* score(bkey) type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     bplus_meta bplus;
     htree_meta htree;
 } zset_meta_info;

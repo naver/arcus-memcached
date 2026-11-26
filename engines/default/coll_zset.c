@@ -36,8 +36,6 @@
 #include "bplus_tree.h"
 #include "hash_tree.h"
 
-#define ZSET_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
@@ -82,7 +80,7 @@ static htree_ops zset_htree_ops = {
 static const void *zset_get_bkey(const bplus_elem_item *elem, uint32_t *nbkey)
 {
     const zset_elem_item *e = (const zset_elem_item *)elem;
-    *nbkey = e->nbkey;
+    *nbkey = 0;
     return e->data;
 }
 
@@ -90,7 +88,7 @@ static const void *zset_get_eflag(const bplus_elem_item *elem, uint32_t *neflag)
 {
     const zset_elem_item *e = (const zset_elem_item *)elem;
     *neflag = e->neflag;
-    return e->data + ZSET_REAL_NBKEY(e->nbkey);
+    return e->data + sizeof(uint64_t);
 }
 
 static const void *zset_get_value(const bplus_elem_item *elem, uint32_t *nvalue)
@@ -100,19 +98,19 @@ static const void *zset_get_value(const bplus_elem_item *elem, uint32_t *nvalue)
      */
     const zset_elem_item *e = (const zset_elem_item *)elem;
     *nvalue = e->nbytes;
-    return e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
+    return e->data + sizeof(uint64_t) + e->neflag;
 }
 
 static const void *zset_get_key(const htree_elem_item *elem, uint16_t *nkey)
 {
     const zset_elem_item *e = (const zset_elem_item *)elem;
     *nkey = e->nbytes;
-    return e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
+    return e->data + sizeof(uint64_t) + e->neflag;
 }
 
 static inline uint32_t do_zset_elem_ntotal(zset_elem_item *elem)
 {
-    return sizeof(zset_elem_item) + ZSET_REAL_NBKEY(elem->nbkey)
+    return sizeof(zset_elem_item) + sizeof(uint64_t)
            + elem->neflag + elem->nbytes;
 }
 
@@ -174,7 +172,6 @@ static hash_item *do_zset_item_alloc(const void *key, const uint32_t nkey,
         if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-        info->bktype  = BKEY_TYPE_UNKNOWN;
         bplus_init(&info->bplus, &zset_bplus_ops, true);
         htree_init(&info->htree, &zset_htree_ops);
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
@@ -182,10 +179,9 @@ static hash_item *do_zset_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static zset_elem_item *do_zset_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
-                                          const uint32_t nbytes)
+static zset_elem_item *do_zset_elem_alloc(const uint32_t neflag, const uint32_t nbytes)
 {
-    size_t ntotal = sizeof(zset_elem_item) + ZSET_REAL_NBKEY(nbkey) + neflag + nbytes;
+    size_t ntotal = sizeof(zset_elem_item) + sizeof(uint64_t) + neflag + nbytes;
 
     zset_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL);
     if (elem != NULL) {
@@ -194,7 +190,6 @@ static zset_elem_item *do_zset_elem_alloc(const uint32_t nbkey, const uint32_t n
 
         elem->refcount    = 0;
         elem->linked      = 0;
-        elem->nbkey       = (uint8_t)nbkey;
         elem->neflag      = (uint8_t)neflag;
         elem->nbytes      = (uint16_t)nbytes;
     }
@@ -235,7 +230,7 @@ static void zset_elem_delete_post(bplus_elem_item *elem, void *arg)
     size_t space_decreased = 0;
 
     if (ctx->htree_delete) {
-        const char *member = (const char *)e->data + ZSET_REAL_NBKEY(e->nbkey) + e->neflag;
+        const char *member = (const char *)e->data + sizeof(uint64_t) + e->neflag;
         zset_elem_item *deleted = (zset_elem_item *)htree_elem_delete(&info->htree, e->hval,
                                                                       member, e->nbytes,
                                                                       &space_decreased);
@@ -258,22 +253,22 @@ static ENGINE_ERROR_CODE do_zset_elem_replace(zset_meta_info *info, htree_prev_i
 {
     zset_elem_item *old_elem = (pinfo->prev != NULL) ? (zset_elem_item *)pinfo->prev->next
                                                      : (zset_elem_item *)pinfo->node->htab[pinfo->hidx];
-    const void *member = new_elem->data + ZSET_REAL_NBKEY(new_elem->nbkey) + new_elem->neflag;
+    const void *member = new_elem->data + sizeof(uint64_t) + new_elem->neflag;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
     zset_elem_item *replaced;
     size_t space_increased = 0;
     size_t space_decreased = 0;
 
     /* same score and eflag: nothing to replace */
-    if (old_elem->nbkey == new_elem->nbkey && old_elem->neflag == new_elem->neflag &&
+    if (old_elem->neflag == new_elem->neflag &&
         memcmp(old_elem->data, new_elem->data,
-               ZSET_REAL_NBKEY(new_elem->nbkey) + new_elem->neflag) == 0) {
+               sizeof(uint64_t) + new_elem->neflag) == 0) {
         do_zset_elem_free(new_elem);
         return ENGINE_SUCCESS;
     }
 
     /* replace in bplus tree */
-    if (bplus_elem_find(&info->bplus, new_elem->data, new_elem->nbkey,
+    if (bplus_elem_find(&info->bplus, new_elem->data, 0,
                         member, new_elem->nbytes, path) != NULL) {
         /* same score: replace in place */
         replaced = (zset_elem_item *)bplus_elem_replace(&path[0], (bplus_elem_item *)new_elem);
@@ -285,7 +280,7 @@ static ENGINE_ERROR_CODE do_zset_elem_replace(zset_meta_info *info, htree_prev_i
         if (ret != ENGINE_SUCCESS) {
             return ret;
         }
-        uint32_t deleted = bplus_elem_delete(&info->bplus, old_elem->data, old_elem->nbkey,
+        uint32_t deleted = bplus_elem_delete(&info->bplus, old_elem->data, 0,
                                              member, old_elem->nbytes, NULL,
                                              NULL, NULL, &space_decreased);
         assert(deleted == 1);
@@ -319,7 +314,7 @@ static ENGINE_ERROR_CODE do_zset_elem_add(zset_meta_info *info, htree_prev_info 
 {
     ENGINE_ERROR_CODE ret;
     bplus_elem_posi path[BPLUS_MAX_DEPTH];
-    const void *member = elem->data + ZSET_REAL_NBKEY(elem->nbkey) + elem->neflag;
+    const void *member = elem->data + sizeof(uint64_t) + elem->neflag;
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
@@ -343,7 +338,7 @@ static ENGINE_ERROR_CODE do_zset_elem_add(zset_meta_info *info, htree_prev_info 
     }
 
     /* insert position (bplus) only; member already unique, so never found */
-    bplus_elem_item *find = bplus_elem_find(&info->bplus, elem->data, elem->nbkey,
+    bplus_elem_item *find = bplus_elem_find(&info->bplus, elem->data, 0,
                                             member, elem->nbytes, path);
     assert(find == NULL);
 
@@ -362,13 +357,6 @@ static ENGINE_ERROR_CODE do_zset_elem_add(zset_meta_info *info, htree_prev_info 
         return ret;
     }
 
-    if (info->ccnt == 0) {
-        /* set bkey type */
-        if (elem->nbkey == 0)
-            info->bktype = BKEY_TYPE_UINT64;
-        else
-            info->bktype = BKEY_TYPE_BINARY;
-    }
     info->ccnt++;
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_zset_elem_ntotal(elem)) + space_increased;
@@ -386,15 +374,7 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
     ENGINE_ERROR_CODE ret;
     htree_prev_info pinfo;
     zset_elem_item *find;
-    const void *member = elem->data + ZSET_REAL_NBKEY(elem->nbkey) + elem->neflag;
-
-    /* validation check: score(bkey) type */
-    if (info->ccnt > 0) {
-        if ((info->bktype == BKEY_TYPE_UINT64 && elem->nbkey >  0) ||
-            (info->bktype == BKEY_TYPE_BINARY && elem->nbkey == 0)) {
-            return ENGINE_EBADBKEY;
-        }
-    }
+    const void *member = elem->data + sizeof(uint64_t) + elem->neflag;
 
     /* check uniqueness + insert position (htree) */
     elem->hval = genhash_string_hash(member, elem->nbytes);
@@ -406,8 +386,10 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
             return ENGINE_ELEM_EEXISTS;
         }
         /* update condition check: score */
-        if ((cond == UPDATE_COND_GT && !BKEY_ISGT(elem->data, elem->nbkey, find->data, find->nbkey)) ||
-            (cond == UPDATE_COND_LT && !BKEY_ISLT(elem->data, elem->nbkey, find->data, find->nbkey))) {
+        if ((cond == UPDATE_COND_GT &&
+             !UINT64_ISGT((const uint64_t *)elem->data, (const uint64_t *)find->data)) ||
+            (cond == UPDATE_COND_LT &&
+             !UINT64_ISLT((const uint64_t *)elem->data, (const uint64_t *)find->data))) {
             return ENGINE_NOT_STORED;
         }
 #ifdef ENABLE_STICKY_ITEM
@@ -429,14 +411,12 @@ static ENGINE_ERROR_CODE do_zset_elem_insert(hash_item *it, zset_elem_item *elem
 
 static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
                                              const char *member, const uint32_t nbytes,
-                                             const void *score, const uint32_t nscore,
+                                             const uint64_t *score,
                                              ENGINE_UPDATE_COND cond, const eflag_update *eupdate)
 {
     htree_prev_info pinfo;
     zset_elem_item *elem;
     unsigned char *ptr;
-    uint32_t real_nbkey;
-    uint32_t new_nbkey;
     uint32_t new_neflag;
 
     int hval = genhash_string_hash(member, nbytes);
@@ -453,27 +433,25 @@ static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
     }
 
     /* update condition check: score */
-    if ((cond == UPDATE_COND_GT && !BKEY_ISGT(score, nscore, elem->data, elem->nbkey)) ||
-        (cond == UPDATE_COND_LT && !BKEY_ISLT(score, nscore, elem->data, elem->nbkey))) {
+    if ((cond == UPDATE_COND_GT && !UINT64_ISGT(score, (const uint64_t *)elem->data)) ||
+        (cond == UPDATE_COND_LT && !UINT64_ISLT(score, (const uint64_t *)elem->data))) {
         return ENGINE_NOT_STORED;
     }
 
-    real_nbkey = ZSET_REAL_NBKEY(elem->nbkey);
-    new_nbkey = (score == NULL ? elem->nbkey : nscore);
     new_neflag = (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX ? elem->neflag : eupdate->neflag);
 
     if (elem->refcount == 0 &&
-        (score == NULL || BKEY_ISEQ(score, nscore, elem->data, elem->nbkey)) &&
+        (score == NULL || UINT64_ISEQ(score, (const uint64_t *)elem->data)) &&
         elem->neflag == new_neflag) {
         /* same score and eflag size */
         /* do in-place update */
         if (eupdate != NULL) {
             if (eupdate->bitwop < BITWISE_OP_MAX) {
-                ptr = elem->data + real_nbkey + eupdate->offset;
+                ptr = elem->data + sizeof(uint64_t) + eupdate->offset;
                 (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
             } else {
                 if (eupdate->neflag > 0) {
-                    memcpy(elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
+                    memcpy(elem->data + sizeof(uint64_t), eupdate->eflag, eupdate->neflag);
                 }
             }
         }
@@ -486,22 +464,22 @@ static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
          */
 #endif
 
-        zset_elem_item *new_elem = do_zset_elem_alloc(new_nbkey, new_neflag, elem->nbytes);
+        zset_elem_item *new_elem = do_zset_elem_alloc(new_neflag, elem->nbytes);
         if (new_elem == NULL) {
             return ENGINE_ENOMEM;
         }
 
         /* build the new element */
         if (score != NULL) {
-            memcpy(new_elem->data, score, ZSET_REAL_NBKEY(new_nbkey));
+            memcpy(new_elem->data, score, sizeof(uint64_t));
         } else {
-            memcpy(new_elem->data, elem->data, real_nbkey);
+            memcpy(new_elem->data, elem->data, sizeof(uint64_t));
         }
-        ptr = new_elem->data + ZSET_REAL_NBKEY(new_nbkey);
+        ptr = new_elem->data + sizeof(uint64_t);
 
         if (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX) {
             if (elem->neflag > 0) {
-                memcpy(ptr, elem->data + real_nbkey, elem->neflag);
+                memcpy(ptr, elem->data + sizeof(uint64_t), elem->neflag);
             }
             if (eupdate != NULL) {
                 (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr + eupdate->offset, eupdate->eflag,
@@ -513,7 +491,7 @@ static ENGINE_ERROR_CODE do_zset_elem_update(zset_meta_info *info,
             }
         }
 
-        memcpy(ptr + new_neflag, elem->data + real_nbkey + elem->neflag, elem->nbytes);
+        memcpy(ptr + new_neflag, elem->data + sizeof(uint64_t) + elem->neflag, elem->nbytes);
         new_elem->hval = elem->hval;
 
         /* replace the element */
@@ -550,7 +528,7 @@ static uint32_t do_zset_elem_delete(zset_meta_info *info, const int nummembers,
                                                                            mlist[ii].length,
                                                                            &space_decreased);
                 if (elem != NULL) {
-                    uint32_t deleted = bplus_elem_delete(bplus, elem->data, elem->nbkey,
+                    uint32_t deleted = bplus_elem_delete(bplus, elem->data, 0,
                                                          mlist[ii].value, mlist[ii].length, NULL,
                                                          &delete_ctx, NULL, &space_decreased);
                     assert(deleted == 1);
@@ -615,11 +593,11 @@ ENGINE_ERROR_CODE zset_struct_create(const char *key, const uint32_t nkey,
     return ret;
 }
 
-zset_elem_item *zset_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes)
+zset_elem_item *zset_elem_alloc(const uint32_t neflag, const uint32_t nbytes)
 {
     zset_elem_item *elem;
     LOCK_CACHE();
-    elem = do_zset_elem_alloc(nbkey, neflag, nbytes);
+    elem = do_zset_elem_alloc(neflag, nbytes);
     UNLOCK_CACHE();
     return elem;
 }
@@ -676,7 +654,7 @@ ENGINE_ERROR_CODE zset_elem_insert(const char *key, const uint32_t nkey,
 
 ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
                                    const char *member, const uint32_t nbytes,
-                                   const void *score, const uint32_t nscore,
+                                   const uint64_t *score,
                                    ENGINE_UPDATE_COND cond, const eflag_update *eupdate,
                                    const void *cookie)
 {
@@ -695,12 +673,7 @@ ENGINE_ERROR_CODE zset_elem_update(const char *key, const uint32_t nkey,
             if (info->ccnt == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
-            if (score != NULL &&
-                ((info->bktype == BKEY_TYPE_UINT64 && nscore >  0) ||
-                 (info->bktype == BKEY_TYPE_BINARY && nscore == 0))) {
-                ret = ENGINE_EBADBKEY; break;
-            }
-            ret = do_zset_elem_update(info, member, nbytes, score, nscore, cond, eupdate);
+            ret = do_zset_elem_update(info, member, nbytes, score, cond, eupdate);
         } while(0);
         do_item_release(it);
     }
@@ -766,10 +739,6 @@ ENGINE_ERROR_CODE zset_elem_delete_by_score(const char *key, const uint32_t nkey
         do {
             if (info->ccnt == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
-            }
-            if ((info->bktype == BKEY_TYPE_UINT64 && srange->from_nbkey >  0) ||
-                (info->bktype == BKEY_TYPE_BINARY && srange->from_nbkey == 0)) {
-                ret = ENGINE_EBADBKEY; break;
             }
             *del_count = do_zset_elem_delete_by_score(info, srtype, srange, efilter,
                                                       req_count, opcost);
