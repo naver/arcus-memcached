@@ -195,6 +195,10 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
                                 const uint32_t offset, const uint32_t count,
                                 void *delete_arg,
                                 uint32_t *opcost, size_t *space_decreased);
+uint32_t bplus_elem_delete_by_posi(bplus_meta *bplus,
+                                   const int index, const uint32_t count,
+                                   void *delete_arg,
+                                   uint32_t *opcost, size_t *space_decreased);
 bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decreased);
 bplus_elem_item *bplus_delete_last_elem(bplus_meta *bplus, size_t *space_decreased);
 

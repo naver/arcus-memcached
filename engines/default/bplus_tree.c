@@ -961,6 +961,31 @@ static int do_bplus_posi_from_path(bplus_meta *bplus,
     return bpos; /* bplus position */
 }
 
+static bplus_elem_item *do_bplus_find_by_posi(bplus_meta *bplus, const int index,
+                                              bplus_elem_posi *path)
+{
+    bplus_indx_node *node = bplus->root;
+    int i, tot_ecnt = 0;
+
+    while (node->ndepth > 0) {
+        for (i = 0; i < node->used_count; i++) {
+            assert(node->ecnt[i] > 0);
+            if ((tot_ecnt + node->ecnt[i]) > index) break;
+            tot_ecnt += node->ecnt[i];
+        }
+        assert(i < node->used_count);
+        path[node->ndepth].node = node;
+        path[node->ndepth].indx = i;
+        node = (bplus_indx_node *)node->item[i];
+    }
+    assert(node->ndepth == 0);
+    path[0].node = node;
+    path[0].indx = index-tot_ecnt;
+    path[0].bkeq = false;
+
+    return BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
+}
+
 static int do_bplus_elem_batch_get(bplus_elem_posi posi, const int count,
                                    const bool forward, const bool reverse,
                                    bplus_elem_item **elem_array)
@@ -1294,30 +1319,21 @@ uint32_t bplus_elem_delete(bplus_meta *bplus,
     return 0;
 }
 
-uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
-                                const bool forward, const bkey_range *bkrange,
-                                const eflag_filter *efilter,
-                                const uint32_t offset, const uint32_t count,
-                                void *delete_arg,
-                                uint32_t *opcost, size_t *space_decreased)
+static uint32_t do_bplus_elem_delete_bulk(bplus_meta *bplus, bplus_elem_posi *path,
+                                          const bool forward, const bkey_range *bkrange,
+                                          const eflag_filter *efilter,
+                                          const uint32_t offset, const uint32_t count,
+                                          void *delete_arg,
+                                          uint32_t *opcost, size_t *space_decreased)
 {
-    assert(bplus->root);
     bplus_indx_node *root = bplus->root;
-    bplus_elem_item *elem;
-    bplus_elem_posi path[BPLUS_MAX_DEPTH];
+    bplus_elem_item *elem = BPLUS_GET_ELEM_ITEM(path[0].node, path[0].indx);
     bplus_elem_posi upth[BPLUS_MAX_DEPTH]; /* upper node path */
     uint32_t tot_found = 0;
     uint32_t cur_found = 0;
     uint32_t node_cnt = 1;
     uint32_t skip_cnt = 0;
     int i;
-
-    if (opcost) *opcost = 0;
-    if (root == NULL) return 0;
-
-    assert(root->ndepth < BPLUS_MAX_DEPTH);
-    elem = do_bplus_find_first(bplus, forward, bkrange, path, true);
-    if (elem == NULL) return 0;
 
     bplus_elem_posi c_posi = path[0];
     bplus_elem_posi s_posi = c_posi; /* save the current posi */
@@ -1386,6 +1402,46 @@ uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
         do_bplus_node_merge(bplus, path, forward, node_cnt, space_decreased);
     }
     return tot_found;
+}
+
+uint32_t bplus_elem_delete_bulk(bplus_meta *bplus,
+                                const bool forward, const bkey_range *bkrange,
+                                const eflag_filter *efilter,
+                                const uint32_t offset, const uint32_t count,
+                                void *delete_arg,
+                                uint32_t *opcost, size_t *space_decreased)
+{
+    assert(bplus->root);
+    bplus_indx_node *root = bplus->root;
+    bplus_elem_item *elem;
+    bplus_elem_posi path[BPLUS_MAX_DEPTH];
+
+    if (opcost) *opcost = 0;
+    if (root == NULL) return 0;
+
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
+    elem = do_bplus_find_first(bplus, forward, bkrange, path, true);
+    if (elem == NULL) return 0;
+
+    return do_bplus_elem_delete_bulk(bplus, path, forward, bkrange, efilter,
+                                     offset, count, delete_arg, opcost, space_decreased);
+}
+
+uint32_t bplus_elem_delete_by_posi(bplus_meta *bplus,
+                                   const int index, const uint32_t count,
+                                   void *delete_arg,
+                                   uint32_t *opcost, size_t *space_decreased)
+{
+    bplus_indx_node *root = bplus->root;
+    bplus_elem_posi path[BPLUS_MAX_DEPTH];
+
+    if (opcost) *opcost = 0;
+    if (root == NULL) return 0;
+
+    assert(root->ndepth < BPLUS_MAX_DEPTH);
+    do_bplus_find_by_posi(bplus, index, path);
+    return do_bplus_elem_delete_bulk(bplus, path, true, NULL, NULL, 0, count,
+                                     delete_arg, opcost, space_decreased);
 }
 
 bplus_elem_item *bplus_delete_first_elem(bplus_meta *bplus, size_t *space_decreased)
@@ -1657,35 +1713,17 @@ ENGINE_ERROR_CODE bplus_elem_get_by_posi(bplus_meta *bplus,
                                          const int index, const uint32_t count, const bool forward,
                                          bplus_elem_item **elem_array, uint32_t *elem_count)
 {
-    bplus_elem_posi  posi;
-    bplus_indx_node *node;
+    bplus_elem_posi  path[BPLUS_MAX_DEPTH];
     bplus_elem_item *elem;
-    int i, tot_ecnt;
     uint32_t nfound; /* found count */
 
     if (bplus->root == NULL) return ENGINE_ELEM_ENOENT;
 
-    node = bplus->root;
-    tot_ecnt = 0;
-    while (node->ndepth > 0) {
-        for (i = 0; i < node->used_count; i++) {
-            assert(node->ecnt[i] > 0);
-            if ((tot_ecnt + node->ecnt[i]) > index) break;
-            tot_ecnt += node->ecnt[i];
-        }
-        assert(i < node->used_count);
-        node = (bplus_indx_node *)node->item[i];
-    }
-    assert(node->ndepth == 0);
-    posi.node = node;
-    posi.indx = index-tot_ecnt;
-    posi.bkeq = false;
-
-    elem = BPLUS_GET_ELEM_ITEM(posi.node, posi.indx);
+    elem = do_bplus_find_by_posi(bplus, index, path);
     elem->refcount++;
     elem_array[0] = elem;
     nfound = 1;
-    nfound += do_bplus_elem_batch_get(posi, count-1, forward, false, &elem_array[nfound]);
+    nfound += do_bplus_elem_batch_get(path[0], count-1, forward, false, &elem_array[nfound]);
 
     *elem_count = nfound;
     if (*elem_count > 0) {
